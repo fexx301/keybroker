@@ -44,7 +44,11 @@ export function validateConnection(c) {
   };
 }
 
+// The pattern "jira-issue" means: a work item key the caller can see. The key shape is checked here; visibility is
+// checked by the broker, as the caller, before any outside request.
+export const JIRA_ISSUE = 'jira-issue';
 function compilePattern(p) {
+  if (p === JIRA_ISSUE) return /^[A-Z][A-Z0-9_]+-[1-9][0-9]*$/;
   need(typeof p === 'string' && p.length > 0 && p.length <= 200, 'parameter pattern: 1-200 characters');
   try {
     return new RegExp(`^(?:${p})$`);

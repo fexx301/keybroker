@@ -76,3 +76,23 @@ test('agent tools are split: reads cannot send writes and writes cannot read', a
   await assert.rejects(call({ operation: 'read', caller: ME, kind: 'write' }, deps(res(200), { op: read })), /only reads; use keybroker-call/);
   assert.equal(d.seen.fetches.length, 0);
 });
+
+test('jira-issue parameters: only work items the caller can see, checked before any request, failing closed', async () => {
+  const conn = validateConnection({ id: 'echo', name: 'Echo', baseUrl: 'https://postman-echo.com', auth: { scheme: 'bearer' } });
+  const op = validateOperation({ name: 'lookup', connectionId: 'echo', method: 'GET', path: '/get', params: parseParamLines('ticket query jira-issue'), returns: ['args.ticket'], allowed: [ME] });
+  const run = async (key, canSeeIssue) => {
+    const d = { ...deps(res(200, { args: { ticket: key } }, 'application/json'), { op, connection: conn, secret: 's3cret' }), canSeeIssue };
+    return [await call({ operation: 'lookup', params: { ticket: key }, caller: ME }, d).catch((e) => e), d.seen];
+  };
+  const [ok, okSeen] = await run('MOBL-57', async () => true);
+  assert.deepEqual(ok, { 'args.ticket': 'MOBL-57' });
+  assert.equal(okSeen.fetches.length, 1);
+  for (const [canSee, reason] of [[async () => false, /cannot see work item KBD-1/], [async () => { throw new Error('401'); }, /could not confirm/], [async () => 'yes', /cannot see/]]) {
+    const [err, seen] = await run('KBD-1', canSee);
+    assert.match(err.message, reason);
+    assert.equal(seen.fetches.length, 0);
+  }
+  const [bad, badSeen] = await run('not-a-key', async () => true);
+  assert.match(bad.message, /pattern/);
+  assert.equal(badSeen.fetches.length, 0);
+});

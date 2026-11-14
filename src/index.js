@@ -1,4 +1,4 @@
-import { fetch } from '@forge/api';
+import api, { fetch, route } from '@forge/api';
 import { call, Refused } from './core/broker.js';
 import { store } from './store.js';
 
@@ -9,6 +9,11 @@ const deps = {
   getConnection: store.getConnection,
   getSecret: store.getSecret,
   fetch,
+  // Asked as the caller, never as the app: Jira answers 404 for work items this user may not browse.
+  canSeeIssue: async (key) => {
+    const res = await api.asUser().requestJira(route`/rest/api/3/issue/${key}?fields=id`, { headers: { Accept: 'application/json' } });
+    return res.status === 200;
+  },
   now: () => new Date().toISOString(),
   record: async (entry) => {
     console.log(JSON.stringify({ event: `call.${entry.outcome}`, ...entry }));

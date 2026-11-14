@@ -170,7 +170,7 @@ function OperationForm({ initial, connections, act, onDone }) {
         <Textfield id="o-path" defaultValue={f.path} onChange={set('path')} placeholder="/repos/acme/{repo}/issues" />
         <Label labelFor="o-params">Parameters, one per line: name, where it goes (path, query or body), allowed pattern, or "= value" to fix it</Label>
         <TextArea id="o-params" defaultValue={f.params} onChange={set('params')} placeholder={'repo path [a-z0-9-]{1,100}\nstate query open|closed optional\nusername body = Keybroker'} />
-        <HelperMessage>A value that does not match its whole pattern is refused before any request. Add "optional" to a query or body parameter. A fixed value cannot be supplied or changed by callers.</HelperMessage>
+        <HelperMessage>A value that does not match its whole pattern is refused before any request. Add "optional" to a query or body parameter. A fixed value cannot be supplied or changed by callers. The pattern jira-issue accepts only a work item key the caller can see in Jira.</HelperMessage>
         <Label labelFor="o-returns">Returned fields</Label>
         <Textfield id="o-returns" defaultValue={f.returns} onChange={set('returns')} placeholder="0.title, 0.number" />
         <HelperMessage>Only these fields come back, by dotted path. Leave empty for a write: any 2xx succeeds and callers get only the status.</HelperMessage>

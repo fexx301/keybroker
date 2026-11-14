@@ -1,9 +1,10 @@
 // The call path every surface (Automation, Rovo, MCP) goes through. No Forge imports: storage and fetch are injected.
-import { authHeaders, buildRequest, Invalid, pickFields, secretFragments } from './operations.js';
+import { authHeaders, buildRequest, Invalid, JIRA_ISSUE, pickFields, secretFragments } from './operations.js';
 
 export class Refused extends Error {}
 
-// deps: { getOperation(name), getConnection(id), getSecret(connectionId), fetch(url, init), record(entry), now() }
+// deps: { getOperation(name), getConnection(id), getSecret(connectionId), fetch(url, init), record(entry), now(),
+//         canSeeIssue(key): true only if Jira, asked as the caller, returns the work item }
 // kind: 'read' or 'write' restricts an agent tool to GET or non-GET operations; omitted (Automation) allows both.
 export async function call({ operation, params, caller, surface, kind }, deps) {
   const entry = { at: deps.now(), operation: String(operation ?? '').slice(0, 48), caller: caller ?? null, surface };
@@ -27,6 +28,18 @@ export async function call({ operation, params, caller, surface, kind }, deps) {
   } catch (e) {
     if (e instanceof Invalid) return refuse(e.message);
     throw e;
+  }
+  // Jira-bound parameters: Jira's own permissions decide which work items this caller may name. Fail closed.
+  for (const [name, spec] of Object.entries(op.params)) {
+    const key = params?.[name];
+    if (spec.pattern !== JIRA_ISSUE || key === undefined || key === null || key === '') continue;
+    let visible = false;
+    try {
+      visible = (await deps.canSeeIssue(String(key))) === true;
+    } catch {
+      return refuse(`could not confirm that the caller can see ${key}`);
+    }
+    if (!visible) return refuse(`caller cannot see work item ${key}`);
   }
   const secret = await deps.getSecret(conn.id);
   if (!secret) return refuse('no credential stored for this connection (revoked or never set)');
