@@ -50,7 +50,9 @@ function ConnectionCard({ c, approved, act }) {
         <Inline space="space.100" alignBlock="center">
           <Heading as="h4">{c.name}</Heading>
           <Lozenge appearance={c.hasCredential ? 'success' : 'removed'}>{c.hasCredential ? 'credential stored' : 'no credential'}</Lozenge>
-          <Lozenge appearance={approved ? 'success' : 'moved'}>{approved ? 'destination approved' : 'destination not approved'}</Lozenge>
+          <Lozenge appearance={approved ? 'success' : approved === false ? 'moved' : 'default'}>
+            {approved ? 'destination approved' : approved === false ? 'destination not approved' : 'approval status unavailable'}
+          </Lozenge>
         </Inline>
         <Text>
           {c.id} · {c.baseUrl} · {SCHEMES.find((s) => s.value === c.auth.scheme)?.label}
@@ -82,7 +84,7 @@ function ConnectionCard({ c, approved, act }) {
             appearance="danger"
             onClick={act(async () => {
               await invoke('deleteConnection', { id: c.id });
-              if (approved) await permissions.egress.deleteGroup({ key: egressKey(c.id) });
+              if (approved !== false) await permissions.egress.deleteGroup({ key: egressKey(c.id) });
             }, `Connection ${c.name} deleted with its credential.`)}
           >
             Delete
@@ -231,12 +233,15 @@ function Admin() {
   const [formKey, setFormKey] = useState(0);
 
   const refresh = async () => {
-    setData(await invoke('state'));
+    const state = await invoke('state');
+    setData(state);
     try {
-      const g = await permissions.egress.get({});
-      setApproved(new Set(g.results.filter((r) => r.configured.length).map((r) => r.key)));
-    } catch {
-      setApproved(new Set());
+      const keys = state.connections.map((c) => egressKey(c.id));
+      const g = keys.length ? await permissions.egress.get({ keys }) : { results: [] };
+      setApproved(new Set(g.results.filter((r) => r.configured?.length).map((r) => r.key)));
+    } catch (e) {
+      // Unknown is not the same as "not approved": say so instead of guessing.
+      setApproved({ error: e?.message ?? 'unknown error' });
     }
   };
   useEffect(() => {
@@ -296,7 +301,7 @@ function Admin() {
 
       <Heading as="h2">Connections</Heading>
       {data.connections.map((c) => (
-        <ConnectionCard key={c.id} c={c} approved={approved.has(egressKey(c.id))} act={act} />
+        <ConnectionCard key={c.id} c={c} approved={approved instanceof Set ? approved.has(egressKey(c.id)) : null} act={act} />
       ))}
       <NewConnection key={`c${formKey}`} act={act} />
 
