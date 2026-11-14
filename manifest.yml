@@ -1,4 +1,87 @@
-modules: {}
+modules:
+  action:
+    # Key kept from the spike so existing rules keep working.
+    - key: sealed-call-automation
+      name: Sealed call
+      function: runForAutomation
+      actionVerb: GET
+      description: Call an operation an admin approved in Sealed. The rule never receives the credential.
+      config:
+        resource: automation-config
+        render: native
+      inputs:
+        operation:
+          title: Operation
+          type: string
+          description: Name of an operation defined in Sealed.
+          required: true
+        params:
+          title: Parameters
+          type: string
+          description: JSON object of parameter values. Smart values are allowed.
+          required: false
+      outputs:
+        result:
+          description: The operation's declared fields, as JSON text.
+          type: string
+          nullable: false
+        value:
+          description: The first declared field, as text.
+          type: string
+          nullable: true
+      outputContext:
+        entityName: call
+        outputType: OBJECT
+        outputDomain: sealed
+    - key: sealed-call
+      name: Sealed call
+      function: callForAgent
+      actionVerb: GET
+      description: Call an operation an admin approved in Sealed, by name. The credential is never returned. Returns only the operation's declared fields, or a refusal with its reason. Use sealed-list first to see which operations you may call and their parameters.
+      inputs:
+        operation:
+          title: Operation
+          type: string
+          description: Name of an operation from sealed-list.
+          required: true
+        params:
+          title: Parameters
+          type: string
+          description: 'JSON object of parameter values, for example {"repo": "sealed"}. Omit if the operation takes none.'
+          required: false
+    - key: sealed-list
+      name: Sealed operations
+      function: listForAgent
+      actionVerb: GET
+      description: List the Sealed operations you are allowed to call, with each one's destination, parameters (name, where it goes, allowed pattern, required) and returned fields.
+      inputs:
+        filter:
+          title: Filter
+          type: string
+          description: Optional and currently ignored.
+          required: false
+  automation:actionProvider:
+    - key: sealed-provider
+      actions:
+        - sealed-call-automation
+  rovo:mcp:
+    - key: sealed-mcp
+      name: Sealed
+      tools:
+        - sealed-list
+        - sealed-call
+  function:
+    - key: runForAutomation
+      handler: index.runForAutomation
+    - key: callForAgent
+      handler: index.callForAgent
+    - key: listForAgent
+      handler: index.listForAgent
+    - key: adminResolver
+      handler: index.adminResolver
+resources:
+  - key: automation-config
+    path: src/frontend/automation-config.jsx
 app:
   runtime:
     name: nodejs24.x
@@ -9,3 +92,7 @@ permissions:
   scopes:
     - storage:app
     - read:jira-work
+  external:
+    # Destinations are approved by a site admin at runtime, one connection at a time.
+    configurable:
+      enabled: true
