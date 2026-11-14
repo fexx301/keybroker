@@ -1,0 +1,11 @@
+modules: {}
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/17f9e5de-d86b-4ff9-839c-ce5be26a43fb
+permissions:
+  scopes:
+    - storage:app
+    - read:jira-work
