@@ -40,7 +40,7 @@ test('an allowed call returns only declared fields and is recorded', async () =>
   assert.deepEqual(out, { 'args.q': 'hi', url: 'https://postman-echo.com/get?q=hi' });
   const init = d.seen.fetches[0].init;
   assert.equal(init.headers.Authorization, `Bearer ${SECRET}`);
-  assert.equal(init.headers['User-Agent'], 'Sealed-Forge-app');
+  assert.equal(init.headers['User-Agent'], 'Keybroker-Forge-app');
   assert.equal(init.redirect, 'error');
   assert.deepEqual(d.seen.records, [{ at: '2026-11-14T00:00:00Z', operation: 'echo-get', caller: ME, surface: 'mcp', outcome: 'allowed', status: 200 }]);
   assert.ok(!JSON.stringify(d.seen.records).includes(SECRET));

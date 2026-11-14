@@ -34,7 +34,7 @@ export async function call({ operation, params, caller, surface }, deps) {
       method: req.method,
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'Sealed-Forge-app', // some APIs (GitHub) refuse requests without one
+        'User-Agent': 'Keybroker-Forge-app', // some APIs (GitHub) refuse requests without one
         ...(req.body ? { 'Content-Type': 'application/json' } : {}),
         ...authHeaders(conn, secret),
       },

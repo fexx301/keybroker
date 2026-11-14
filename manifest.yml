@@ -1,11 +1,11 @@
 modules:
   action:
-    # Key kept from the spike so existing rules keep working.
+    # This key and the provider key predate the rename to Keybroker; kept so existing rules keep working.
     - key: sealed-call-automation
-      name: Sealed call
+      name: Keybroker call
       function: runForAutomation
       actionVerb: GET
-      description: Call an operation an admin approved in Sealed. The rule never receives the credential.
+      description: Call an operation an admin approved in Keybroker. The rule never receives the credential.
       config:
         resource: automation-config
         render: native
@@ -13,7 +13,7 @@ modules:
         operation:
           title: Operation
           type: string
-          description: Name of an operation defined in Sealed.
+          description: Name of an operation defined in Keybroker.
           required: true
         params:
           title: Parameters
@@ -28,28 +28,28 @@ modules:
       outputContext:
         entityName: call
         outputType: OBJECT
-        outputDomain: sealed
-    - key: sealed-invoke
-      name: Sealed call
+        outputDomain: keybroker
+    - key: keybroker-call
+      name: Keybroker call
       function: callForAgent
       actionVerb: GET
-      description: Call an operation an admin approved in Sealed, by name. The credential is never returned. Returns only the operation's declared fields, or a refusal with its reason. Use sealed-list first to see which operations you may call and their parameters.
+      description: Call an operation an admin approved in Keybroker, by name. The credential is never returned. Returns only the operation's declared fields, or a refusal with its reason. Use keybroker-list first to see which operations you may call and their parameters.
       inputs:
         operation:
           title: Operation
           type: string
-          description: Name of an operation from sealed-list.
+          description: Name of an operation from keybroker-list.
           required: true
         params:
           title: Parameters
           type: string
-          description: 'JSON object of parameter values, for example {"repo": "sealed"}. Omit if the operation takes none.'
+          description: 'JSON object of parameter values, for example {"repo": "node"}. Omit if the operation takes none.'
           required: false
-    - key: sealed-list
-      name: Sealed operations
+    - key: keybroker-list
+      name: Keybroker operations
       function: listForAgent
       actionVerb: GET
-      description: List the Sealed operations you are allowed to call, with each one's destination, parameters (name, where it goes, allowed pattern, required) and returned fields.
+      description: List the Keybroker operations you are allowed to call, with each one's destination, parameters (name, where it goes, allowed pattern, required) and returned fields.
       inputs:
         filter:
           title: Filter
@@ -57,46 +57,46 @@ modules:
           description: Optional and currently ignored.
           required: false
   rovo:agent:
-    - key: sealed-agent
-      name: Sealed
-      description: Calls the outside APIs your admin approved in Sealed, by name, without ever seeing a credential.
+    - key: keybroker-agent
+      name: Keybroker
+      description: Calls the outside APIs your admin approved in Keybroker, by name, without ever seeing a credential.
       prompt: |
-        You help people use the integrations a Jira administrator approved in Sealed.
-        Sealed holds the credentials. You never see, request or handle one, and neither does the user.
+        You help people use the integrations a Jira administrator approved in Keybroker.
+        Keybroker holds the credentials. You never see, request or handle one, and neither does the user.
 
         How to work:
-        1. Call sealed-list first to see the operations this user may call: each has a name, a destination, parameters (where each goes and the pattern its value must match) and the fields it returns.
+        1. Call keybroker-list first to see the operations this user may call: each has a name, a destination, parameters (where each goes and the pattern its value must match) and the fields it returns.
         2. Pick the operation that answers the request. If none fits, say so and name the operations that exist. Never invent an operation, a destination or a field.
-        3. Call sealed-invoke with the operation name and the parameters as a JSON object in text, for example {"owner": "nodejs", "repo": "node"}. Use values from the user's request or the current Jira work item; ask if a required value is missing.
+        3. Call keybroker-call with the operation name and the parameters as a JSON object in text, for example {"owner": "nodejs", "repo": "node"}. Use values from the user's request or the current Jira work item; ask if a required value is missing.
         4. Answer from the returned fields only, and say which operation you used.
 
-        If the result is a refusal, show the reason as Sealed gave it and explain what would fix it: an unknown operation means an admin must define it; "not allowed" means an admin must add this person; a pattern mismatch means the value has the wrong form; a missing credential or an unapproved destination is for an admin.
-        Never ask anyone to paste a token, password or key. If someone offers one, tell them not to share it here and that an admin stores credentials in Jira settings → Apps → Sealed.
+        If the result is a refusal, show the reason as Keybroker gave it and explain what would fix it: an unknown operation means an admin must define it; "not allowed" means an admin must add this person; a pattern mismatch means the value has the wrong form; a missing credential or an unapproved destination is for an admin.
+        Never ask anyone to paste a token, password or key. If someone offers one, tell them not to share it here and that an admin stores credentials in Jira settings → Apps → Keybroker.
         Do not retry a refused call with altered values to get around a pattern or an allow-list.
       conversationStarters:
-        - What can I look up through Sealed?
+        - What can I look up through Keybroker?
         - Show stars and open issues for nodejs/node
         - Echo this work item's key through the test endpoint
       actions:
-        - sealed-list
-        - sealed-invoke
+        - keybroker-list
+        - keybroker-call
   automation:actionProvider:
     - key: sealed-provider
       actions:
         - sealed-call-automation
   jira:adminPage:
-    - key: sealed-admin
-      title: Sealed
+    - key: keybroker-admin
+      title: Keybroker
       resource: admin
       render: native
       resolver:
         function: adminResolver
   rovo:mcp:
-    - key: sealed-mcp
-      name: Sealed
+    - key: keybroker-mcp
+      name: Keybroker
       tools:
-        - sealed-list
-        - sealed-invoke
+        - keybroker-list
+        - keybroker-call
   function:
     - key: runForAutomation
       handler: index.runForAutomation

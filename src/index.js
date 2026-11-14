@@ -23,7 +23,7 @@ function parseParams(text) {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Refused('parameters must be JSON, for example {"repo": "sealed"}');
+    throw new Refused('parameters must be JSON, for example {"repo": "node"}');
   }
 }
 
@@ -40,7 +40,7 @@ export async function runForAutomation(payload, context) {
     const result = await run(payload, context, 'automation');
     return { result: JSON.stringify(result) };
   } catch (e) {
-    throw new Error(e instanceof Refused ? `Sealed refused: ${e.message}` : 'Sealed failed unexpectedly');
+    throw new Error(e instanceof Refused ? `Keybroker refused: ${e.message}` : 'Keybroker failed unexpectedly');
   }
 }
 

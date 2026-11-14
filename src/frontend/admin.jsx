@@ -25,6 +25,7 @@ import React, { useEffect, useState } from 'react';
 import { formatParamLines, toOperation } from '../core/form.js';
 
 // One egress group per connection, so removing one connection's approval leaves the others alone.
+// Internal key; the prefix predates the rename and is kept so approvals already granted stay attached.
 const egressKey = (id) => `sealed-${id}`;
 const option = (value, label = value) => ({ label, value });
 const SCHEMES = [option('bearer', 'Bearer token'), option('header', 'Custom header'), option('basic', 'Basic (user:password)')];
@@ -39,7 +40,7 @@ function ConnectionCard({ c, approved, act }) {
       egresses: [
         {
           key: egressKey(c.id),
-          description: `Sealed connection "${c.name}": send requests carrying its stored credential to ${host}.`,
+          description: `Keybroker connection "${c.name}": send requests carrying its stored credential to ${host}.`,
           configured: [{ domain: new URL(c.baseUrl).origin, type: [EgressType.FetchBackendSide] }],
         },
       ],
@@ -60,7 +61,7 @@ function ConnectionCard({ c, approved, act }) {
         </Text>
         <Label labelFor={`cred-${c.id}`}>{c.hasCredential ? 'Rotate: new credential' : 'Credential'}</Label>
         <Textfield id={`cred-${c.id}`} type="password" value={credential} onChange={(e) => setCredential(e.target.value)} />
-        <HelperMessage>Write-only. Sealed never shows it again, and rules and agents never receive it.</HelperMessage>
+        <HelperMessage>Write-only. Keybroker never shows it again, and rules and agents never receive it.</HelperMessage>
         <ButtonGroup>
           <Button
             appearance="primary"
@@ -290,7 +291,7 @@ function Admin() {
   return (
     <Stack space="space.300">
       <Text>
-        Store a credential once. Automation rules, Rovo agents and MCP clients call the operations below by name; Sealed adds the credential, makes the
+        Store a credential once. Automation rules, Rovo agents and MCP clients call the operations below by name; Keybroker adds the credential, makes the
         request and returns only the declared fields.
       </Text>
       {message && (
