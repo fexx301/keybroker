@@ -18,11 +18,12 @@ AI agents make this worse. An agent that needs an outside API either gets no acc
 
 ## What Keybroker does
 
-An admin adds a **connection** (a destination and how the credential is attached: bearer token, custom header, basic auth, or a **secret webhook URL** for Slack, Teams, Discord or Zapier) and stores the credential once. The admin then defines **operations**: a method, a path, the parameters a caller may supply (each with where it goes and a pattern its value must match, or a value the admin fixes), the fields that may come back (none, for a write), and who may call it.
+An admin adds a **connection** (a destination and how the credential is attached: bearer token, custom header, basic auth, or a **secret webhook URL** for Slack, Teams, Discord or Zapier) and stores the credential once. The admin then defines **operations**: a method, a path, the parameters a caller may supply (each with where it goes and a pattern its value must match, a value the admin fixes, or `jira-issue`: a work item key the caller can see in Jira), the fields that may come back (none, for a write), and who may call it.
 
 A rule, an agent or an MCP client calls an operation **by name**. Keybroker then:
 
 1. checks that the caller, taken from Forge's invocation context, is on that operation's allow-list;
+   for a `jira-issue` parameter, asks Jira **as the caller** whether they can see that work item, so Jira's own permissions decide which outside records a rule or agent may touch;
 2. checks every parameter against its pattern and builds the request; the final URL must stay on the connection's host and path;
 3. attaches the credential, makes the request, and refuses redirects;
 4. returns **only the declared fields**, and refuses if one of them contains the credential;
@@ -77,7 +78,7 @@ This section is for automated or AI-assisted review. It states what the app does
 
 ```bash
 npm install
-npm test        # node --test: 18 tests, no network; storage and fetch are injected as fakes
+npm test        # node --test: 19 tests, no network; storage and fetch are injected as fakes
 ```
 
 **Read in this order (about 420 lines):**
@@ -108,6 +109,7 @@ npm test        # node --test: 18 tests, no network; storage and fetch are injec
 | Admin-fixed values cannot be supplied or overridden | `operations.js` `checkValues` | writes: "fixed values cannot be supplied or overridden" | `source: "Mallory"` → refused "set by the admin"; POST body carried `source: Keybroker` |
 | A secret webhook URL stays on its host and never comes back | `operations.js` `checkSecret`, `secretFragments`; `admin.js` `setCredential` | writes: "a secret URL must stay on the connection host…", "…echoing part of a secret URL is refused" | Operation returning the URL's `sig` → refused; logs: 0 matches for it |
 | Agents cannot slip a write through the read tool | `broker.js` `kind` check; `keybroker-call` (GET) / `keybroker-send` (TRIGGER) | writes: "agent tools are split" | `keybroker-call` on a POST operation → refused "use keybroker-send" |
+| Jira permissions decide which work items a caller may name (`jira-issue`) | `broker.js` visibility check; `index.js` `canSeeIssue` (`api.asUser()`), fail closed | writes: "jira-issue parameters…" | Restricted project KDT (browse limited to apps): KDT-1 allowed before the restriction, refused after, from MCP, the Rovo agent and an Automation rule, with no outside request; MOBL-57 allowed on all three. The app itself could still browse KDT, so the check runs as the caller |
 | Works against a real authenticated API | `authHeaders` | operations: "credentials attach according to the scheme" | GitHub `GET /user` with a short-lived read-only token → only `login` returned |
 
 **What Keybroker does not claim**
