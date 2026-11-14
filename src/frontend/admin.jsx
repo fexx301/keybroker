@@ -24,27 +24,37 @@ import ForgeReconciler, {
 import React, { useEffect, useState } from 'react';
 import { formatParamLines, toOperation } from '../core/form.js';
 
-// One egress group per connection, so removing one connection's approval leaves the others alone.
-// Internal key; the prefix predates the rename and is kept so approvals already granted stay attached.
-const egressKey = (id) => `sealed-${id}`;
+// Atlassian approves a host once across all of an app's egress groups, so approval is tracked per host.
+// Groups are keyed by host; older per-connection groups (sealed-<id>) are still read so earlier approvals count.
+// The sealed- prefix predates the rename to Keybroker.
+const hostKey = (origin) => `sealed-host-${new URL(origin).host.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
+const legacyKey = (id) => `sealed-${id}`;
+const originOf = (c) => new URL(c.baseUrl).origin;
 const option = (value, label = value) => ({ label, value });
 const SCHEMES = [option('bearer', 'Bearer token'), option('header', 'Custom header'), option('basic', 'Basic (user:password)'), option('url', 'Secret URL (webhook)')];
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => option(m));
 const card = xcss({ borderColor: 'color.border', borderStyle: 'solid', borderWidth: 'border.width', borderRadius: 'border.radius', padding: 'space.200' });
 
-function ConnectionCard({ c, approved, act }) {
+// approvalKeys: the egress groups that approve this connection's host ([] = not approved, null = unknown).
+// sharedWith: other connections on the same host, which an approval change also affects.
+function ConnectionCard({ c, approvalKeys, sharedWith, act }) {
   const [credential, setCredential] = useState('');
   const host = new URL(c.baseUrl).host;
+  const approved = approvalKeys === null ? null : approvalKeys.length > 0;
+  const also = sharedWith.length ? ` This also applies to ${sharedWith.join(', ')}.` : '';
   const approve = () =>
     permissions.egress.set({
       egresses: [
         {
-          key: egressKey(c.id),
-          description: `Keybroker connection "${c.name}": send requests carrying its stored credential to ${host}.`,
-          configured: [{ domain: new URL(c.baseUrl).origin, type: [EgressType.FetchBackendSide] }],
+          key: hostKey(originOf(c)),
+          description: `Keybroker: send requests carrying admin-stored credentials to ${host}.`,
+          configured: [{ domain: originOf(c), type: [EgressType.FetchBackendSide] }],
         },
       ],
     });
+  const removeApproval = async () => {
+    for (const key of approvalKeys ?? []) await permissions.egress.deleteGroup({ key });
+  };
   return (
     <Box xcss={card}>
       <Stack space="space.100">
@@ -77,15 +87,16 @@ function ConnectionCard({ c, approved, act }) {
             Revoke
           </Button>
           {approved ? (
-            <Button onClick={act(() => permissions.egress.deleteGroup({ key: egressKey(c.id) }), `${host} is no longer approved.`)}>Remove approval</Button>
+            <Button onClick={act(removeApproval, `${host} is no longer approved.${also}`)}>Remove approval</Button>
           ) : (
-            <Button onClick={act(approve, `${host} approved.`)}>Approve {host}</Button>
+            <Button onClick={act(approve, `${host} approved.${also}`)}>Approve {host}</Button>
           )}
           <Button
             appearance="danger"
             onClick={act(async () => {
               await invoke('deleteConnection', { id: c.id });
-              if (approved !== false) await permissions.egress.deleteGroup({ key: egressKey(c.id) });
+              // Keep the host approved while another connection still uses it.
+              if (!sharedWith.length) await removeApproval();
             }, `Connection ${c.name} deleted with its credential.`)}
           >
             Delete
@@ -228,7 +239,7 @@ function Activity() {
 
 function Admin() {
   const [data, setData] = useState(null);
-  const [approved, setApproved] = useState(new Set());
+  const [approved, setApproved] = useState(new Map());
   const [message, setMessage] = useState(null);
   const [editing, setEditing] = useState(null);
   const [formKey, setFormKey] = useState(0);
@@ -237,9 +248,12 @@ function Admin() {
     const state = await invoke('state');
     setData(state);
     try {
-      const keys = state.connections.map((c) => egressKey(c.id));
+      const keys = [...new Set(state.connections.flatMap((c) => [legacyKey(c.id), hostKey(originOf(c))]))];
       const g = keys.length ? await permissions.egress.get({ keys }) : { results: [] };
-      setApproved(new Set(g.results.filter((r) => r.configured?.length).map((r) => r.key)));
+      // origin -> keys of the groups that approve it
+      const byOrigin = new Map();
+      for (const r of g.results) for (const d of r.configured ?? []) byOrigin.set(new URL(d.domain).origin, [...(byOrigin.get(new URL(d.domain).origin) ?? []), r.key]);
+      setApproved(byOrigin);
     } catch (e) {
       // Unknown is not the same as "not approved": say so instead of guessing.
       setApproved({ error: e?.message ?? 'unknown error' });
@@ -302,7 +316,13 @@ function Admin() {
 
       <Heading as="h2">Connections</Heading>
       {data.connections.map((c) => (
-        <ConnectionCard key={c.id} c={c} approved={approved instanceof Set ? approved.has(egressKey(c.id)) : null} act={act} />
+        <ConnectionCard
+          key={c.id}
+          c={c}
+          approvalKeys={approved instanceof Map ? approved.get(originOf(c)) ?? [] : null}
+          sharedWith={data.connections.filter((o) => o.id !== c.id && originOf(o) === originOf(c)).map((o) => o.name)}
+          act={act}
+        />
       ))}
       <NewConnection key={`c${formKey}`} act={act} />
 
