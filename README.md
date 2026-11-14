@@ -18,7 +18,7 @@ AI agents make this worse. An agent that needs an outside API either gets no acc
 
 ## What Keybroker does
 
-An admin adds a **connection** (a destination and how the credential is attached) and stores the credential once. The admin then defines **operations**: a method, a path, the parameters a caller may supply (each with where it goes and a pattern its value must match), the fields that may come back, and who may call it.
+An admin adds a **connection** (a destination and how the credential is attached: bearer token, custom header, basic auth, or a **secret webhook URL** for Slack, Teams, Discord or Zapier) and stores the credential once. The admin then defines **operations**: a method, a path, the parameters a caller may supply (each with where it goes and a pattern its value must match, or a value the admin fixes), the fields that may come back (none, for a write), and who may call it.
 
 A rule, an agent or an MCP client calls an operation **by name**. Keybroker then:
 
@@ -38,7 +38,7 @@ The caller proposes; Keybroker's code decides.
 |---|---|---|
 | Jira Automation | `action` + `automation:actionProvider` | A "Keybroker call" step; output `{{fetchedKeybrokerCall.result}}` (declared fields as JSON text) |
 | Rovo | `rovo:agent` "Keybroker" | An agent that lists the operations the user may call and calls them by name |
-| MCP | `rovo:mcp` | Tools `keybroker-list` and `keybroker-call` for any MCP client, once an admin enables MCP for the app |
+| MCP | `rovo:mcp` | Tools `keybroker-list`, `keybroker-call` (reads) and `keybroker-send` (writes) for any MCP client, once an admin enables MCP for the app |
 | Admin | `jira:adminPage` | Connections, credentials (write-only), destination approval, operations, activity |
 
 Destinations are approved by a site admin at runtime through Atlassian's own egress prompt, one connection at a time (`permissions.external.configurable`). The manifest names no outside hosts.
@@ -77,7 +77,7 @@ This section is for automated or AI-assisted review. It states what the app does
 
 ```bash
 npm install
-npm test        # node --test: 12 tests, no network; storage and fetch are injected as fakes
+npm test        # node --test: 18 tests, no network; storage and fetch are injected as fakes
 ```
 
 **Read in this order (about 420 lines):**
@@ -104,6 +104,10 @@ npm test        # node --test: 12 tests, no network; storage and fetch are injec
 | Redirects are not followed | `broker.js` `redirect: 'error'` | — | Not tested live |
 | Upstream errors never surface bodies or raw errors | `broker.js` catch blocks | broker: "upstream failures never surface the body" | — |
 | Admin functions require Jira admin | `admin.js` `requireAdmin` on every resolver | — | Only the positive case tested (a site admin) |
+| Writes return only a status; a webhook that answers with text or nothing still succeeds | `broker.js`: no declared fields → `{status}`, body never read | writes: "a write with no declared fields succeeds…" | `hook-notify` → `{"status":"200"}` |
+| Admin-fixed values cannot be supplied or overridden | `operations.js` `checkValues` | writes: "fixed values cannot be supplied or overridden" | `source: "Mallory"` → refused "set by the admin"; POST body carried `source: Keybroker` |
+| A secret webhook URL stays on its host and never comes back | `operations.js` `checkSecret`, `secretFragments`; `admin.js` `setCredential` | writes: "a secret URL must stay on the connection host…", "…echoing part of a secret URL is refused" | Operation returning the URL's `sig` → refused; logs: 0 matches for it |
+| Agents cannot slip a write through the read tool | `broker.js` `kind` check; `keybroker-call` (GET) / `keybroker-send` (TRIGGER) | writes: "agent tools are split" | `keybroker-call` on a POST operation → refused "use keybroker-send" |
 | Works against a real authenticated API | `authHeaders` | operations: "credentials attach according to the scheme" | GitHub `GET /user` with a short-lived read-only token → only `login` returned |
 
 **What Keybroker does not claim**
