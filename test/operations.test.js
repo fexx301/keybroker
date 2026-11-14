@@ -30,7 +30,7 @@ test('operations: placeholders, methods and paths are checked', () => {
   assert.throws(() => validateOperation({ ...base, path: '//evil.example/a' }), Invalid);
   assert.throws(() => validateOperation({ ...base, path: '/a?x=1' }), Invalid);
   assert.throws(() => validateOperation({ ...base, path: '/a', params: { b: { in: 'body', pattern: '.+' } } }), /no body/);
-  assert.throws(() => validateOperation({ ...base, path: '/a', returns: [] }), /returned fields/);
+  assert.throws(() => validateOperation({ ...base, path: '/a', returns: Array.from({ length: 21 }, (_, i) => `f${i}`) }), /returned fields/);
   assert.throws(() => validateOperation({ ...base, path: '/a', params: { b: { in: 'query', pattern: '(' } } }), /regular expression/);
   assert.equal(validateOperation({ ...base, path: '/a/{x}', params: { x: { in: 'path', pattern: '.+', required: false } } }).params.x.required, true);
 });

@@ -33,7 +33,23 @@ modules:
       name: Keybroker call
       function: callForAgent
       actionVerb: GET
-      description: Call an operation an admin approved in Keybroker, by name. The credential is never returned. Returns only the operation's declared fields, or a refusal with its reason. Use keybroker-list first to see which operations you may call and their parameters.
+      description: Call a Keybroker operation that only reads (method GET), by name. The credential is never returned; you get only the declared fields or a refusal with its reason. Use keybroker-list first.
+      inputs:
+        operation:
+          title: Operation
+          type: string
+          description: Name of an operation from keybroker-list.
+          required: true
+        params:
+          title: Parameters
+          type: string
+          description: 'JSON object of parameter values, for example {"repo": "node"}. Omit if the operation takes none.'
+          required: false
+    - key: keybroker-send
+      name: Keybroker send
+      function: sendForAgent
+      actionVerb: TRIGGER
+      description: Run a Keybroker operation that changes data (any method but GET), by name, such as posting a message. The credential is never returned; you get the status or a refusal with its reason. Use keybroker-list first.
       inputs:
         operation:
           title: Operation
@@ -67,7 +83,7 @@ modules:
         How to work:
         1. Call keybroker-list first to see the operations this user may call: each has a name, a destination, parameters (where each goes and the pattern its value must match) and the fields it returns.
         2. Pick the operation that answers the request. If none fits, say so and name the operations that exist. Never invent an operation, a destination or a field.
-        3. Call keybroker-call with the operation name and the parameters as a JSON object in text, for example {"owner": "nodejs", "repo": "node"}. Use values from the user's request or the current Jira work item; ask if a required value is missing.
+        3. Call the operation by name with its parameters as a JSON object in text, for example {"owner": "nodejs", "repo": "node"}: keybroker-call for operations with method GET, keybroker-send for any other method. Before keybroker-send, tell the user exactly what will be sent and where, and only send what they asked for. Use values from the user's request or the current Jira work item; ask if a required value is missing.
         4. Answer from the returned fields only, and say which operation you used.
 
         If the result is a refusal, show the reason as Keybroker gave it and explain what would fix it: an unknown operation means an admin must define it; "not allowed" means an admin must add this person; a pattern mismatch means the value has the wrong form; a missing credential or an unapproved destination is for an admin.
@@ -80,6 +96,7 @@ modules:
       actions:
         - keybroker-list
         - keybroker-call
+        - keybroker-send
   automation:actionProvider:
     - key: sealed-provider
       actions:
@@ -97,11 +114,14 @@ modules:
       tools:
         - keybroker-list
         - keybroker-call
+        - keybroker-send
   function:
     - key: runForAutomation
       handler: index.runForAutomation
     - key: callForAgent
       handler: index.callForAgent
+    - key: sendForAgent
+      handler: index.sendForAgent
     - key: listForAgent
       handler: index.listForAgent
     - key: adminResolver

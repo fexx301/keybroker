@@ -28,7 +28,7 @@ import { formatParamLines, toOperation } from '../core/form.js';
 // Internal key; the prefix predates the rename and is kept so approvals already granted stay attached.
 const egressKey = (id) => `sealed-${id}`;
 const option = (value, label = value) => ({ label, value });
-const SCHEMES = [option('bearer', 'Bearer token'), option('header', 'Custom header'), option('basic', 'Basic (user:password)')];
+const SCHEMES = [option('bearer', 'Bearer token'), option('header', 'Custom header'), option('basic', 'Basic (user:password)'), option('url', 'Secret URL (webhook)')];
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => option(m));
 const card = xcss({ borderColor: 'color.border', borderStyle: 'solid', borderWidth: 'border.width', borderRadius: 'border.radius', padding: 'space.200' });
 
@@ -59,7 +59,7 @@ function ConnectionCard({ c, approved, act }) {
           {c.id} · {c.baseUrl} · {SCHEMES.find((s) => s.value === c.auth.scheme)?.label}
           {c.auth.scheme === 'header' ? ` (${c.auth.headerName})` : ''}
         </Text>
-        <Label labelFor={`cred-${c.id}`}>{c.hasCredential ? 'Rotate: new credential' : 'Credential'}</Label>
+        <Label labelFor={`cred-${c.id}`}>{(c.hasCredential ? 'Rotate: new ' : '') + (c.auth.scheme === 'url' ? `secret URL (https://${host}/…)` : 'credential')}</Label>
         <Textfield id={`cred-${c.id}`} type="password" value={credential} onChange={(e) => setCredential(e.target.value)} />
         <HelperMessage>Write-only. Keybroker never shows it again, and rules and agents never receive it.</HelperMessage>
         <ButtonGroup>
@@ -157,12 +157,12 @@ function OperationForm({ initial, connections, act, onDone }) {
         <Select inputId="o-method" options={METHODS} defaultValue={option(f.method)} onChange={(o) => setF({ ...f, method: o.value })} />
         <Label labelFor="o-path">Path</Label>
         <Textfield id="o-path" defaultValue={f.path} onChange={set('path')} placeholder="/repos/acme/{repo}/issues" />
-        <Label labelFor="o-params">Parameters, one per line: name, where it goes (path, query or body), allowed pattern</Label>
-        <TextArea id="o-params" defaultValue={f.params} onChange={set('params')} placeholder={'repo path [a-z0-9-]{1,100}\nstate query open|closed optional'} />
-        <HelperMessage>A value that does not match its whole pattern is refused before any request. Add "optional" to a query or body parameter.</HelperMessage>
+        <Label labelFor="o-params">Parameters, one per line: name, where it goes (path, query or body), allowed pattern, or "= value" to fix it</Label>
+        <TextArea id="o-params" defaultValue={f.params} onChange={set('params')} placeholder={'repo path [a-z0-9-]{1,100}\nstate query open|closed optional\nusername body = Keybroker'} />
+        <HelperMessage>A value that does not match its whole pattern is refused before any request. Add "optional" to a query or body parameter. A fixed value cannot be supplied or changed by callers.</HelperMessage>
         <Label labelFor="o-returns">Returned fields</Label>
         <Textfield id="o-returns" defaultValue={f.returns} onChange={set('returns')} placeholder="0.title, 0.number" />
-        <HelperMessage>Only these fields come back, by dotted path. Everything else in the response is dropped.</HelperMessage>
+        <HelperMessage>Only these fields come back, by dotted path. Leave empty for a write: any 2xx succeeds and callers get only the status.</HelperMessage>
         <UserPicker
           name="o-allowed"
           label="Who may call it"

@@ -2,7 +2,7 @@
 // the page is only shown to admins, but the resolver is the trust boundary.
 import api, { route } from '@forge/api';
 import Resolver from '@forge/resolver';
-import { Invalid, validateConnection, validateOperation } from './core/operations.js';
+import { checkSecret, Invalid, validateConnection, validateOperation } from './core/operations.js';
 import { store } from './store.js';
 
 async function requireAdmin() {
@@ -56,9 +56,10 @@ resolver.define('deleteConnection', admin(async ({ id }) => {
 }));
 
 resolver.define('setCredential', admin(async ({ connectionId, value }) => {
-  if (!(await store.getConnection(connectionId))) throw new Error('No such connection');
+  const conn = await store.getConnection(connectionId);
+  if (!conn) throw new Error('No such connection');
   const v = typeof value === 'string' ? value.trim() : '';
-  if (!v || v.length > 8192) throw new Error('Enter a credential up to 8192 characters');
+  checkSecret(conn, v); // a secret URL must be https on the connection's host
   await store.setSecret(connectionId, v);
   log('credential.set', { connectionId });
   return true;

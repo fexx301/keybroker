@@ -27,9 +27,9 @@ function parseParams(text) {
   }
 }
 
-async function run(payload, context, surface) {
+async function run(payload, context, surface, kind) {
   return call(
-    { operation: payload?.operation, params: parseParams(payload?.params), caller: context?.principal?.accountId, surface },
+    { operation: payload?.operation, params: parseParams(payload?.params), caller: context?.principal?.accountId, surface, kind },
     deps,
   );
 }
@@ -44,14 +44,17 @@ export async function runForAutomation(payload, context) {
   }
 }
 
-// Rovo and MCP: a refusal comes back as data so the agent can explain it.
-export async function callForAgent(payload, context) {
+// Rovo and MCP: a refusal comes back as data so the agent can explain it. Reads and writes are separate tools,
+// so a write is declared as one to Rovo and to MCP clients.
+async function forAgent(payload, context, kind) {
   try {
-    return { result: await run(payload, context, 'agent') };
+    return { result: await run(payload, context, 'agent', kind) };
   } catch (e) {
     return { refused: e instanceof Refused ? e.message : 'unexpected failure' };
   }
 }
+export const callForAgent = (payload, context) => forAgent(payload, context, 'read');
+export const sendForAgent = (payload, context) => forAgent(payload, context, 'write');
 
 // What this caller may use. No credentials, no other callers' access lists.
 export async function listForAgent(payload, context) {

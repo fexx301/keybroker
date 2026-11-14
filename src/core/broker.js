@@ -1,13 +1,14 @@
 // The call path every surface (Automation, Rovo, MCP) goes through. No Forge imports: storage and fetch are injected.
-import { authHeaders, buildRequest, Invalid, pickFields } from './operations.js';
+import { authHeaders, buildRequest, Invalid, pickFields, secretFragments } from './operations.js';
 
 export class Refused extends Error {}
 
 // deps: { getOperation(name), getConnection(id), getSecret(connectionId), fetch(url, init), record(entry), now() }
-export async function call({ operation, params, caller, surface }, deps) {
+// kind: 'read' or 'write' restricts an agent tool to GET or non-GET operations; omitted (Automation) allows both.
+export async function call({ operation, params, caller, surface, kind }, deps) {
   const entry = { at: deps.now(), operation: String(operation ?? '').slice(0, 48), caller: caller ?? null, surface };
-  const refuse = async (reason, extra = {}) => {
-    await deps.record({ ...entry, outcome: 'refused', reason, ...extra });
+  const refuse = async (reason, extra = {}, outcome = 'refused') => {
+    await deps.record({ ...entry, outcome, reason, ...extra });
     throw new Refused(reason);
   };
 
@@ -15,6 +16,8 @@ export async function call({ operation, params, caller, surface }, deps) {
   if (!op) return refuse('unknown operation');
   if (!caller) return refuse('no signed-in caller');
   if (!op.allowed.includes(caller)) return refuse('caller is not allowed to use this operation');
+  if (kind === 'read' && op.method !== 'GET') return refuse(`${op.name} changes data; use keybroker-send`);
+  if (kind === 'write' && op.method === 'GET') return refuse(`${op.name} only reads; use keybroker-call`);
   const conn = await deps.getConnection(op.connectionId);
   if (!conn) return refuse('the operation\'s connection no longer exists');
 
@@ -27,6 +30,14 @@ export async function call({ operation, params, caller, surface }, deps) {
   }
   const secret = await deps.getSecret(conn.id);
   if (!secret) return refuse('no credential stored for this connection (revoked or never set)');
+  if (conn.auth.scheme === 'url') {
+    try {
+      req = buildRequest(conn, op, params, secret);
+    } catch (e) {
+      if (e instanceof Invalid) return refuse('the stored secret URL no longer fits this connection; an admin must store it again');
+      throw e;
+    }
+  }
 
   let res;
   try {
@@ -50,15 +61,21 @@ export async function call({ operation, params, caller, surface }, deps) {
     return refuse('destination refused the request (if this host is new, an admin must approve it)', { status: 403 });
   }
   if (!res.ok) return refuse(`destination returned ${res.status}`, { status: res.status });
+  // A write declares no fields: any 2xx is success and the body is never read (webhooks often answer with text or nothing).
+  if (!op.returns.length) {
+    await deps.record({ ...entry, outcome: 'allowed', status: res.status });
+    return { status: String(res.status) };
+  }
   let data;
   try {
     data = await res.json();
   } catch {
-    return refuse('destination returned a non-JSON body', { status: res.status });
+    return refuse(`the request was sent (HTTP ${res.status}) but the response was not JSON, so no declared field could be read`, { status: res.status }, 'failed');
   }
   const result = pickFields(data, op.returns);
   // Extra layer, not the guarantee: the declared fields are. Refuse rather than return a value carrying the credential.
-  if (Object.values(result).some((v) => typeof v === 'string' && v.includes(secret))) {
+  const fragments = secretFragments(conn, secret);
+  if (Object.values(result).some((v) => typeof v === 'string' && fragments.some((f) => v.includes(f)))) {
     return refuse('a declared field contained the credential; nothing was returned', { status: res.status });
   }
   await deps.record({ ...entry, outcome: 'allowed', status: res.status });
