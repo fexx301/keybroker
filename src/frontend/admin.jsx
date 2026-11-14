@@ -17,6 +17,7 @@ import ForgeReconciler, {
   Text,
   TextArea,
   Textfield,
+  User,
   UserPicker,
   xcss,
 } from '@forge/react';
@@ -178,6 +179,50 @@ function OperationForm({ initial, connections, act, onDone }) {
   );
 }
 
+// Every call and refusal from every surface, newest first. Entries hold no credential and no response body.
+function Activity() {
+  const [page, setPage] = useState({ entries: [], nextCursor: null });
+  const [error, setError] = useState(null);
+  const load = async (cursor) => {
+    try {
+      const next = await invoke('activity', { cursor });
+      setPage((p) => ({ entries: cursor ? [...p.entries, ...next.entries] : next.entries, nextCursor: next.nextCursor }));
+      setError(null);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const rows = page.entries.map((e, i) => ({
+    key: String(i),
+    cells: [
+      { key: 'at', content: new Date(e.at).toLocaleString() },
+      { key: 'op', content: e.operation || '(none)' },
+      { key: 'surface', content: e.surface },
+      { key: 'caller', content: e.caller ? <User accountId={e.caller} /> : 'nobody signed in' },
+      { key: 'outcome', content: <Lozenge appearance={e.outcome === 'allowed' ? 'success' : 'removed'}>{e.outcome}</Lozenge> },
+      { key: 'detail', content: e.reason ?? (e.status ? `HTTP ${e.status}` : '') },
+    ],
+  }));
+  return (
+    <Stack space="space.100">
+      <Inline space="space.100" alignBlock="center">
+        <Heading as="h2">Activity</Heading>
+        <Button onClick={() => load()}>Refresh</Button>
+      </Inline>
+      {error && <SectionMessage appearance="error"><Text>{error}</Text></SectionMessage>}
+      <DynamicTable
+        head={{ cells: ['When', 'Operation', 'From', 'Caller', 'Outcome', 'Detail'].map((content, i) => ({ key: String(i), content })) }}
+        rows={rows}
+        emptyView="No calls yet."
+      />
+      {page.nextCursor && <Button onClick={() => load(page.nextCursor)}>Load older</Button>}
+    </Stack>
+  );
+}
+
 function Admin() {
   const [data, setData] = useState(null);
   const [approved, setApproved] = useState(new Set());
@@ -266,6 +311,8 @@ function Admin() {
       ) : (
         <Text>Add a connection before defining operations.</Text>
       )}
+
+      <Activity />
     </Stack>
   );
 }
