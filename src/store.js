@@ -4,6 +4,7 @@ import { kvs, WhereConditions } from '@forge/kvs';
 const CONN = 'conn:';
 const OP = 'op:';
 const ACT = 'act:';
+const REQ = 'req:';
 const credKey = (connectionId) => `credential:${connectionId}`;
 
 async function all(prefix) {
@@ -38,6 +39,11 @@ export const store = {
   hasSecret: async (connectionId) => Boolean(await kvs.getSecret(credKey(connectionId))),
   setSecret: (connectionId, value) => kvs.setSecret(credKey(connectionId), value),
   deleteSecret: (connectionId) => kvs.deleteSecret(credKey(connectionId)),
+
+  getRequest: (id) => kvs.get(REQ + id),
+  saveRequest: (r) => kvs.set(REQ + r.id, r),
+  // shortcut: reads every request and sorts in memory; fine for hundreds, page by key if volume grows.
+  listRequests: async () => (await all(REQ)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
 
   // Keys sort oldest-last so a prefix query returns the newest entries first.
   record: async (entry) => {

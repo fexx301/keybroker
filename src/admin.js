@@ -2,7 +2,10 @@
 // the page is only shown to admins, but the resolver is the trust boundary.
 import api, { route } from '@forge/api';
 import Resolver from '@forge/resolver';
+import { checkDecision, view } from './core/approvals.js';
+import { call, Refused } from './core/broker.js';
 import { checkSecret, Invalid, validateConnection, validateOperation } from './core/operations.js';
+import { deps } from './deps.js';
 import { store } from './store.js';
 
 async function requireAdmin() {
@@ -83,6 +86,29 @@ resolver.define('deleteOperation', admin(async ({ name }) => {
   await store.deleteOperation(name);
   log('operation.deleted', { name });
   return true;
+}));
+
+resolver.define('requests', admin(async () => (await store.listRequests()).slice(0, 50).map((r) => view(r, Date.now()))));
+
+// The only way to release a pending request: a Jira admin, from this page. Not reachable from any action or MCP tool.
+// Approving runs the whole broker path again, as the original caller; jira-issue parameters are re-checked as the approver.
+resolver.define('decideRequest', admin(async ({ id, approve }, context) => {
+  const req = await store.getRequest(String(id ?? ''));
+  const decider = context.accountId;
+  checkDecision(req, { approve: Boolean(approve), decider, currentOp: await store.getOperation(req?.operation ?? ''), now: Date.now() });
+  // shortcut: no compare-and-set in KVS; marking before sending narrows, but does not close, a double-approve race.
+  await store.saveRequest({ ...req, state: approve ? 'sending' : 'rejected', decidedBy: decider, decidedAt: new Date().toISOString() });
+  log(approve ? 'request.approved' : 'request.rejected', { id: req.id, operation: req.operation });
+  if (!approve) return view({ ...req, state: 'rejected', decidedBy: decider }, Date.now());
+  let done;
+  try {
+    const result = await call({ operation: req.operation, params: req.params, caller: req.caller, surface: 'agent', kind: req.kind, approval: { request: req.id, by: decider } }, deps);
+    done = { ...req, state: 'sent', decidedBy: decider, result };
+  } catch (e) {
+    done = { ...req, state: 'failed', decidedBy: decider, reason: e instanceof Refused ? e.message : 'unexpected failure' };
+  }
+  await store.saveRequest(done);
+  return view(done, Date.now());
 }));
 
 resolver.define('activity', admin(async ({ cursor }) => store.activity(50, cursor)));

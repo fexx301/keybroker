@@ -1,25 +1,10 @@
-import api, { fetch, route } from '@forge/api';
+import { view } from './core/approvals.js';
 import { call, Refused } from './core/broker.js';
+import { deps } from './deps.js';
 import { store } from './store.js';
 
 export { adminResolver } from './admin.js';
 
-const deps = {
-  getOperation: store.getOperation,
-  getConnection: store.getConnection,
-  getSecret: store.getSecret,
-  fetch,
-  // Asked as the caller, never as the app: Jira answers 404 for work items this user may not browse.
-  canSeeIssue: async (key) => {
-    const res = await api.asUser().requestJira(route`/rest/api/3/issue/${key}?fields=id`, { headers: { Accept: 'application/json' } });
-    return res.status === 200;
-  },
-  now: () => new Date().toISOString(),
-  record: async (entry) => {
-    console.log(JSON.stringify({ event: `call.${entry.outcome}`, ...entry }));
-    await store.record(entry);
-  },
-};
 
 // Rules and agents pass parameters as JSON text, since action inputs are scalar.
 function parseParams(text) {
@@ -53,7 +38,11 @@ export async function runForAutomation(payload, context) {
 // so a write is declared as one to Rovo and to MCP clients.
 async function forAgent(payload, context, kind) {
   try {
-    return { result: await run(payload, context, 'agent', kind) };
+    const result = await run(payload, context, 'agent', kind);
+    if (result?.pending) {
+      return { pending: { request: result.pending, expiresAt: result.expiresAt, note: 'Nothing was sent. A Jira admin other than you must approve this request in Jira settings > Apps > Keybroker; keybroker-list shows its state.' } };
+    }
+    return { result };
   } catch (e) {
     return { refused: e instanceof Refused ? e.message : 'unexpected failure' };
   }
@@ -64,11 +53,13 @@ export const sendForAgent = (payload, context) => forAgent(payload, context, 'wr
 // What this caller may use. No credentials, no other callers' access lists.
 export async function listForAgent(payload, context) {
   const me = context?.principal?.accountId;
-  const [ops, conns] = await Promise.all([store.listOperations(), store.listConnections()]);
+  const [ops, conns, reqs] = await Promise.all([store.listOperations(), store.listConnections(), store.listRequests()]);
   const host = Object.fromEntries(conns.map((c) => [c.id, new URL(c.baseUrl).host]));
   return {
     operations: ops
       .filter((o) => me && o.allowed.includes(me))
-      .map((o) => ({ name: o.name, description: o.description, method: o.method, destination: host[o.connectionId] ?? null, params: o.params, returns: o.returns })),
+      .map((o) => ({ name: o.name, description: o.description, method: o.method, destination: host[o.connectionId] ?? null, params: o.params, returns: o.returns, needsApproval: o.approval })),
+    // This caller's own approval requests, newest first, so an agent can report what happened.
+    myRequests: reqs.filter((r) => me && r.caller === me).slice(0, 10).map((r) => view(r, Date.now())),
   };
 }

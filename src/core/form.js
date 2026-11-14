@@ -45,5 +45,6 @@ export function toOperation(form) {
     params: parseParamLines(form.params),
     returns: splitList(form.returns),
     allowed: form.allowed ?? [],
+    approval: Boolean(form.approval),
   };
 }

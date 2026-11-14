@@ -104,6 +104,8 @@ export function validateOperation(o) {
     params: clean,
     returns: [...new Set(returns)],
     allowed: [...new Set(allowed)],
+    // Agent calls (Rovo, MCP) wait for a second person's approval; Automation rules are configured by admins and run directly.
+    approval: Boolean(o.approval),
   };
 }
 

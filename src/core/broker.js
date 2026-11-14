@@ -1,13 +1,15 @@
 // The call path every surface (Automation, Rovo, MCP) goes through. No Forge imports: storage and fetch are injected.
-import { authHeaders, buildRequest, Invalid, JIRA_ISSUE, pickFields, secretFragments } from './operations.js';
+import { authHeaders, buildRequest, checkValues, Invalid, JIRA_ISSUE, pickFields, secretFragments } from './operations.js';
 
 export class Refused extends Error {}
 
 // deps: { getOperation(name), getConnection(id), getSecret(connectionId), fetch(url, init), record(entry), now(),
-//         canSeeIssue(key): true only if Jira, asked as the caller, returns the work item }
+//         canSeeIssue(key): true only if Jira, asked as the caller, returns the work item,
+//         createRequest({ op, params, caller, kind }): stores a pending approval request, returns { id, expiresAt } }
 // kind: 'read' or 'write' restricts an agent tool to GET or non-GET operations; omitted (Automation) allows both.
-export async function call({ operation, params, caller, surface, kind }, deps) {
-  const entry = { at: deps.now(), operation: String(operation ?? '').slice(0, 48), caller: caller ?? null, surface };
+// approval: { request, by } when an approver releases a stored request; the full check runs again.
+export async function call({ operation, params, caller, surface, kind, approval }, deps) {
+  const entry = { at: deps.now(), operation: String(operation ?? '').slice(0, 48), caller: caller ?? null, surface, ...(approval ? { request: approval.request, approvedBy: approval.by } : {}) };
   const refuse = async (reason, extra = {}, outcome = 'refused') => {
     await deps.record({ ...entry, outcome, reason, ...extra });
     throw new Refused(reason);
@@ -40,6 +42,13 @@ export async function call({ operation, params, caller, surface, kind }, deps) {
       return refuse(`could not confirm that the caller can see ${key}`);
     }
     if (!visible) return refuse(`caller cannot see work item ${key}`);
+  }
+  // Approval required: everything above has been checked; store the request and send nothing yet.
+  if (op.approval && surface === 'agent' && !approval) {
+    const supplied = Object.fromEntries(Object.entries(checkValues(op, params)).filter(([n]) => op.params[n].fixed === undefined));
+    const req = await deps.createRequest({ op, params: supplied, caller, kind });
+    await deps.record({ ...entry, outcome: 'pending', reason: `waiting for approval (request ${req.id})`, request: req.id });
+    return { pending: req.id, expiresAt: req.expiresAt };
   }
   const secret = await deps.getSecret(conn.id);
   if (!secret) return refuse('no credential stored for this connection (revoked or never set)');

@@ -4,6 +4,8 @@ import ForgeReconciler, {
   Box,
   Button,
   ButtonGroup,
+  Checkbox,
+  Code,
   DynamicTable,
   Heading,
   HelperMessage,
@@ -182,6 +184,13 @@ function OperationForm({ initial, connections, act, onDone }) {
           description="Rules run as their owner; agents and MCP clients run as the signed-in user."
           onChange={(v) => setF({ ...f, allowed: (Array.isArray(v) ? v : v ? [v] : []).map((u) => u.id) })}
         />
+        <Checkbox
+          name="o-approval"
+          label="Agent calls wait for approval by a Jira admin other than the caller"
+          defaultChecked={Boolean(f.approval)}
+          onChange={(e) => setF({ ...f, approval: e.target.checked })}
+        />
+        <HelperMessage>Rovo and MCP calls are checked, then held until approved here; nothing is sent before that. Automation rules run directly.</HelperMessage>
         <ButtonGroup>
           <Button appearance="primary" onClick={act(async () => (await save(), onDone()), `Operation ${f.name} saved.`)}>
             {editing ? 'Save changes' : 'Add operation'}
@@ -190,6 +199,56 @@ function OperationForm({ initial, connections, act, onDone }) {
         </ButtonGroup>
       </Stack>
     </Box>
+  );
+}
+
+// Agent calls held for approval. Approve re-runs every check as the original caller; you cannot approve your own request.
+function Approvals({ act, me, version }) {
+  const [reqs, setReqs] = useState(null);
+  const [error, setError] = useState(null);
+  const load = () => invoke('requests').then(setReqs, (e) => setError(e.message));
+  useEffect(() => {
+    load();
+  }, [version]);
+  const decide = (id, approve, label) => act(async () => (await invoke('decideRequest', { id, approve }), await load()), label);
+  const pending = (reqs ?? []).filter((r) => r.state === 'pending');
+  const rows = (reqs ?? []).slice(0, 15).map((r) => ({
+    key: r.id,
+    cells: [
+      { key: 'op', content: <Text><Strong>{r.operation}</Strong> · {r.id}</Text> },
+      { key: 'params', content: <Code>{JSON.stringify(r.params)}</Code> },
+      { key: 'caller', content: <User accountId={r.caller} /> },
+      { key: 'state', content: <Lozenge appearance={{ pending: 'moved', sent: 'success', rejected: 'removed', failed: 'removed', expired: 'default' }[r.state] ?? 'default'}>{r.state}</Lozenge> },
+      {
+        key: 'actions',
+        content:
+          r.state === 'pending' ? (
+            <ButtonGroup>
+              <Button appearance="primary" isDisabled={r.caller === me} onClick={decide(r.id, true, `Request ${r.id} approved and sent.`)}>
+                Approve and send
+              </Button>
+              <Button onClick={decide(r.id, false, `Request ${r.id} rejected; nothing was sent.`)}>Reject</Button>
+            </ButtonGroup>
+          ) : (
+            <Text>{r.reason ?? (r.result ? JSON.stringify(r.result) : '')}</Text>
+          ),
+      },
+    ],
+  }));
+  return (
+    <Stack space="space.100">
+      <Inline space="space.100" alignBlock="center">
+        <Heading as="h2">Waiting for approval{pending.length ? ` (${pending.length})` : ''}</Heading>
+        <Button onClick={load}>Refresh</Button>
+      </Inline>
+      {error && <SectionMessage appearance="error"><Text>{error}</Text></SectionMessage>}
+      {pending.some((r) => r.caller === me) && <Text>You cannot approve your own requests; another Jira admin must.</Text>}
+      <DynamicTable
+        head={{ cells: ['Request', 'Parameters', 'Requested by', 'State', ''].map((content, i) => ({ key: String(i), content })) }}
+        rows={rows}
+        emptyView="No requests."
+      />
+    </Stack>
   );
 }
 
@@ -287,7 +346,7 @@ function Admin() {
       { key: 'name', content: <Text><Strong>{o.name}</Strong>{o.description ? ` · ${o.description}` : ''}</Text> },
       { key: 'call', content: `${o.method} ${connName[o.connectionId] ?? o.connectionId} ${o.path}` },
       { key: 'returns', content: o.returns.join(', ') },
-      { key: 'allowed', content: o.allowed.length ? `${o.allowed.length} ${o.allowed.length === 1 ? 'person' : 'people'}${o.allowed.includes(data.me) ? ' incl. you' : ''}` : 'nobody' },
+      { key: 'allowed', content: (o.allowed.length ? `${o.allowed.length} ${o.allowed.length === 1 ? 'person' : 'people'}${o.allowed.includes(data.me) ? ' incl. you' : ''}` : 'nobody') + (o.approval ? ' · agents need approval' : '') },
       {
         key: 'actions',
         content: (
@@ -337,6 +396,8 @@ function Admin() {
       ) : (
         <Text>Add a connection before defining operations.</Text>
       )}
+
+      <Approvals act={act} me={data.me} version={formKey} />
 
       <Activity />
     </Stack>
