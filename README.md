@@ -29,6 +29,8 @@ A rule, an agent or an MCP client calls an operation **by name**. Keybroker then
 4. returns **only the declared fields**, and refuses if one of them contains the credential;
 5. records the call or refusal, with its reason, in an activity log.
 
+An operation can also require **approval for agent calls**: a Rovo or MCP call is fully checked, then held as a pending request (validated parameters only, no credential, nothing sent) until a Jira admin *other than the caller* approves it on the admin page. Approval re-runs every check as the original caller and is refused for a changed operation or after 24 hours. (Rovo's own review card only asks the same user to confirm, and MCP clients get no confirmation at all.)
+
 Rotating or revoking happens in one place. No rule changes.
 
 The caller proposes; Keybroker's code decides.
@@ -40,7 +42,7 @@ The caller proposes; Keybroker's code decides.
 | Jira Automation | `action` + `automation:actionProvider` | A "Keybroker call" step; output `{{fetchedKeybrokerCall.result}}` (declared fields as JSON text) |
 | Rovo | `rovo:agent` "Keybroker" | An agent that lists the operations the user may call and calls them by name |
 | MCP | `rovo:mcp` | Tools `keybroker-list`, `keybroker-call` (reads) and `keybroker-send` (writes) for any MCP client, once an admin enables MCP for the app |
-| Admin | `jira:adminPage` | Connections, credentials (write-only), destination approval, operations, activity |
+| Admin | `jira:adminPage` | Connections, credentials (write-only), destination approval, operations, approvals, activity |
 
 Destinations are approved by a site admin at runtime through Atlassian's own egress prompt, one connection at a time (`permissions.external.configurable`). The manifest names no outside hosts.
 
@@ -78,7 +80,7 @@ This section is for automated or AI-assisted review. It states what the app does
 
 ```bash
 npm install
-npm test        # node --test: 19 tests, no network; storage and fetch are injected as fakes
+npm test        # node --test: 22 tests, no network; storage and fetch are injected as fakes
 ```
 
 **Read in this order (about 420 lines):**
@@ -110,6 +112,7 @@ npm test        # node --test: 19 tests, no network; storage and fetch are injec
 | A secret webhook URL stays on its host and never comes back | `operations.js` `checkSecret`, `secretFragments`; `admin.js` `setCredential` | writes: "a secret URL must stay on the connection host…", "…echoing part of a secret URL is refused" | Operation returning the URL's `sig` → refused; logs: 0 matches for it |
 | Agents cannot slip a write through the read tool | `broker.js` `kind` check; `keybroker-call` (GET) / `keybroker-send` (TRIGGER) | writes: "agent tools are split" | `keybroker-call` on a POST operation → refused "use keybroker-send" |
 | Jira permissions decide which work items a caller may name (`jira-issue`) | `broker.js` visibility check; `index.js` `canSeeIssue` (`api.asUser()`), fail closed | writes: "jira-issue parameters…" | Restricted project KDT (browse limited to apps): KDT-1 allowed before the restriction, refused after, from MCP, the Rovo agent and an Automation rule, with no outside request; MOBL-57 allowed on all three. The app itself could still browse KDT, so the check runs as the caller |
+| Agent writes can require a second person's approval | `broker.js` pending path; `core/approvals.js` `checkDecision`; `admin.js` `decideRequest` (admin-only, the only release path) | approvals: three tests (held and nothing sent; approved run records the approver; no self-approval, changed operation, expiry) | MCP `keybroker-send hook-notify` → `pending`, no outside request (log has no status); admin page lists it with Approve disabled for the requester; rejected → `keybroker-list` shows `rejected`. The approve-and-send path by a second admin is unit-tested only so far |
 | Works against a real authenticated API | `authHeaders` | operations: "credentials attach according to the scheme" | GitHub `GET /user` with a short-lived read-only token → only `login` returned |
 
 **What Keybroker does not claim**
