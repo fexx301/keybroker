@@ -25,7 +25,7 @@ modules:
           description: The operation's declared fields, as JSON text.
           type: string
           nullable: false
-        first:
+        firstField:
           description: The first declared field, as text.
           type: string
           nullable: true
