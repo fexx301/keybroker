@@ -38,7 +38,7 @@ async function run(payload, context, surface) {
 export async function runForAutomation(payload, context) {
   try {
     const result = await run(payload, context, 'automation');
-    return { result: JSON.stringify(result), firstField: Object.values(result)[0] ?? null };
+    return { result: JSON.stringify(result) };
   } catch (e) {
     throw new Error(e instanceof Refused ? `Sealed refused: ${e.message}` : 'Sealed failed unexpectedly');
   }

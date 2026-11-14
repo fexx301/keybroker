@@ -25,10 +25,6 @@ modules:
           description: The operation's declared fields, as JSON text.
           type: string
           nullable: false
-        firstField:
-          description: The first declared field, as text.
-          type: string
-          nullable: true
       outputContext:
         entityName: call
         outputType: OBJECT
