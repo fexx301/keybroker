@@ -33,7 +33,7 @@ modules:
         entityName: call
         outputType: OBJECT
         outputDomain: sealed
-    - key: sealed-call
+    - key: sealed-invoke
       name: Sealed call
       function: callForAgent
       actionVerb: GET
@@ -76,7 +76,7 @@ modules:
       name: Sealed
       tools:
         - sealed-list
-        - sealed-call
+        - sealed-invoke
   function:
     - key: runForAutomation
       handler: index.runForAutomation
