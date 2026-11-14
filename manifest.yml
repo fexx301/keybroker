@@ -64,6 +64,13 @@ modules:
     - key: sealed-provider
       actions:
         - sealed-call-automation
+  jira:adminPage:
+    - key: sealed-admin
+      title: Sealed
+      resource: admin
+      render: native
+      resolver:
+        function: adminResolver
   rovo:mcp:
     - key: sealed-mcp
       name: Sealed
@@ -80,6 +87,8 @@ modules:
     - key: adminResolver
       handler: index.adminResolver
 resources:
+  - key: admin
+    path: src/frontend/admin.jsx
   - key: automation-config
     path: src/frontend/automation-config.jsx
 app:
