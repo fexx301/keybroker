@@ -17,7 +17,7 @@ function Config({ initial }) {
       <HelperMessage>The name of an operation an admin defined in Keybroker.</HelperMessage>
       <Label labelFor="params">Parameters (JSON, smart values allowed)</Label>
       <TextArea id="params" defaultValue={initial.params} onChange={(e) => update({ params: e.target.value })} />
-      <HelperMessage>{'For example {"repo": "{{issue.key}}"}. Leave empty if the operation takes none.'}</HelperMessage>
+      <HelperMessage>{'For example {"ticket": "{{issue.key}}"}. Leave empty if the operation takes none.'}</HelperMessage>
       <Text>The credential stays in Keybroker. This rule only names the operation.</Text>
     </Stack>
   );

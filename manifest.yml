@@ -43,7 +43,7 @@ modules:
         params:
           title: Parameters
           type: string
-          description: 'JSON object of parameter values, for example {"repo": "node"}. Omit if the operation takes none.'
+          description: 'JSON object of parameter values, for example {"ticket": "ABC-123"}. Omit if the operation takes none.'
           required: false
     - key: keybroker-send
       name: Keybroker send
@@ -59,7 +59,7 @@ modules:
         params:
           title: Parameters
           type: string
-          description: 'JSON object of parameter values, for example {"repo": "node"}. Omit if the operation takes none.'
+          description: 'JSON object of parameter values, for example {"ticket": "ABC-123"}. Omit if the operation takes none.'
           required: false
     - key: keybroker-list
       name: Keybroker operations

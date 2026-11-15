@@ -13,7 +13,7 @@ function parseParams(text) {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Refused('parameters must be JSON, for example {"repo": "node"}');
+    throw new Refused('parameters must be JSON, for example {"ticket": "ABC-123"}');
   }
 }
 
