@@ -388,7 +388,15 @@ function Activity() {
       { key: 'surface', content: e.surface },
       { key: 'caller', content: e.caller ? <User accountId={e.caller} /> : 'nobody signed in' },
       { key: 'outcome', content: <Lozenge appearance={e.outcome === 'allowed' ? 'success' : 'removed'}>{e.outcome}</Lozenge> },
-      { key: 'detail', content: e.reason ?? (e.status ? `HTTP ${e.status}` : '') },
+      {
+        key: 'detail',
+        content: e.approvedBy ? (
+          <Inline space="space.050" alignBlock="center">
+            <Text>{e.reason ?? `HTTP ${e.status}`} · approved by</Text>
+            <User accountId={e.approvedBy} />
+          </Inline>
+        ) : (e.reason ?? (e.status ? `HTTP ${e.status}` : '')),
+      },
     ],
   }));
   return (
