@@ -419,7 +419,17 @@ function Admin() {
     setData(state);
     try {
       const keys = [...new Set(state.connections.flatMap((c) => [legacyKey(c.id), hostKey(originOf(c))]))];
-      const g = keys.length ? await permissions.egress.get({ keys }) : { results: [] };
+      // Asked in small batches, following lastEvaluatedKey: with many keys in one request Atlassian returned an empty
+      // list once and an error once, which would show approved hosts as unapproved.
+      const g = { results: [] };
+      for (let i = 0; i < keys.length; i += 5) {
+        let token;
+        do {
+          const page = await permissions.egress.get({ keys: keys.slice(i, i + 5), ...(token ? { nextPageToken: token } : {}) });
+          g.results.push(...page.results);
+          token = page.lastEvaluatedKey;
+        } while (token);
+      }
       // origin -> keys of the groups that approve it
       const byOrigin = new Map();
       for (const r of g.results) for (const d of r.configured ?? []) byOrigin.set(new URL(d.domain).origin, [...(byOrigin.get(new URL(d.domain).origin) ?? []), r.key]);
@@ -506,7 +516,12 @@ function Admin() {
         </SectionMessage>
       )}
 
-      <Inline space="space.150" alignBlock="center">
+      {approved?.error && (
+        <SectionMessage appearance="warning">
+          <Text>Atlassian did not return destination approvals ({approved.error}). Calls still use the real approvals; reload to try again.</Text>
+        </SectionMessage>
+      )}
+            <Inline space="space.150" alignBlock="center">
         <Heading as="h2">Connections</Heading>
         {!data.connections.some((c) => c.id === 'slack') && (
           <Button
