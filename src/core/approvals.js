@@ -20,15 +20,22 @@ export function newRequest({ id, op, params, caller, kind, now }) {
 
 export const isExpired = (req, now) => req.state === 'pending' && now > Date.parse(req.expiresAt);
 
-// Throws Invalid with the reason a decision is not allowed. Rejecting (or cancelling) your own request is fine;
+// A refusal that ends the request for good: it can never be approved, so it leaves the queue.
+function final(state, message) {
+  const e = new Invalid(message);
+  e.state = state;
+  return e;
+}
+
+// Throws Invalid with the reason a decision is not allowed (with .state set when the request is finished for good). Rejecting (or cancelling) your own request is fine;
 // approving it is not: approval exists so that a second person signs off.
 export function checkDecision(req, { approve, decider, currentOp, now }) {
   if (!req) throw new Invalid('no such request');
   if (req.state !== 'pending') throw new Invalid(`request is already ${req.state}`);
-  if (isExpired(req, now)) throw new Invalid('request expired; the caller must ask again');
+  if (isExpired(req, now)) throw final('expired', 'request expired; the caller must ask again');
   if (!approve) return;
   if (decider === req.caller) throw new Invalid('you cannot approve your own request');
-  if (!currentOp || JSON.stringify(currentOp) !== req.opSnapshot) throw new Invalid('the operation changed or was deleted since the request; the caller must ask again');
+  if (!currentOp || JSON.stringify(currentOp) !== req.opSnapshot) throw final('invalidated', 'the operation changed or was deleted since the request; the caller must ask again');
 }
 
 // What the requester (via keybroker-list) and the admin page see.

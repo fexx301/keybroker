@@ -95,7 +95,13 @@ resolver.define('requests', admin(async () => (await store.listRequests()).slice
 resolver.define('decideRequest', admin(async ({ id, approve }, context) => {
   const req = await store.getRequest(String(id ?? ''));
   const decider = context.accountId;
-  checkDecision(req, { approve: Boolean(approve), decider, currentOp: await store.getOperation(req?.operation ?? ''), now: Date.now() });
+  try {
+    checkDecision(req, { approve: Boolean(approve), decider, currentOp: await store.getOperation(req?.operation ?? ''), now: Date.now() });
+  } catch (e) {
+    // Expired or invalidated: record it so the request leaves the queue instead of failing on every click.
+    if (e.state) await store.saveRequest({ ...req, state: e.state, reason: e.message, decidedBy: decider, decidedAt: new Date().toISOString() });
+    throw e;
+  }
   // shortcut: no compare-and-set in KVS; marking before sending narrows, but does not close, a double-approve race.
   await store.saveRequest({ ...req, state: approve ? 'sending' : 'rejected', decidedBy: decider, decidedAt: new Date().toISOString() });
   log(approve ? 'request.approved' : 'request.rejected', { id: req.id, operation: req.operation });

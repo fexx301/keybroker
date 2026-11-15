@@ -33,6 +33,8 @@ const hostKey = (origin) => `sealed-host-${new URL(origin).host.toLowerCase().re
 const legacyKey = (id) => `sealed-${id}`;
 const originOf = (c) => new URL(c.baseUrl).origin;
 const option = (value, label = value) => ({ label, value });
+// Forge prefixes resolver errors; show only Keybroker's own reason.
+const reason = (e) => String(e?.message ?? e).replace(/^There was an error invoking the function - /, '');
 const SCHEMES = [option('bearer', 'Bearer token'), option('header', 'Custom header'), option('basic', 'Basic (user:password)'), option('url', 'Secret URL (webhook)')];
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => option(m));
 const card = xcss({ borderColor: 'color.border', borderStyle: 'solid', borderWidth: 'border.width', borderRadius: 'border.radius', padding: 'space.200' });
@@ -206,7 +208,7 @@ function OperationForm({ initial, connections, act, onDone }) {
 function Approvals({ act, me, version }) {
   const [reqs, setReqs] = useState(null);
   const [error, setError] = useState(null);
-  const load = () => invoke('requests').then(setReqs, (e) => setError(e.message));
+  const load = () => invoke('requests').then(setReqs, (e) => setError(reason(e)));
   useEffect(() => {
     load();
   }, [version]);
@@ -262,7 +264,7 @@ function Activity() {
       setPage((p) => ({ entries: cursor ? [...p.entries, ...next.entries] : next.entries, nextCursor: next.nextCursor }));
       setError(null);
     } catch (e) {
-      setError(e.message);
+      setError(reason(e));
     }
   };
   useEffect(() => {
@@ -319,7 +321,7 @@ function Admin() {
     }
   };
   useEffect(() => {
-    refresh().catch((e) => setMessage({ ok: false, text: e.message }));
+    refresh().catch((e) => setMessage({ ok: false, text: reason(e) }));
   }, []);
 
   // Runs an admin action, reports the outcome and reloads. `reset` clears the add forms.
@@ -330,7 +332,7 @@ function Admin() {
       if (reset) setFormKey((k) => k + 1);
       await refresh();
     } catch (e) {
-      setMessage({ ok: false, text: e.message });
+      setMessage({ ok: false, text: reason(e) });
     }
   };
   const finishEdit = () => {

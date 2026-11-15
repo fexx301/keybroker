@@ -60,7 +60,9 @@ test('decisions: no self-approval, no approving a changed operation, an expired 
   checkDecision(req, { ...ok, approve: false, decider: REQUESTER }); // cancelling your own request is fine
   assert.throws(() => checkDecision(req, { ...ok, currentOp: { ...op, path: '/other' } }), /operation changed/);
   assert.throws(() => checkDecision(req, { ...ok, currentOp: null }), /operation changed or was deleted/);
-  assert.throws(() => checkDecision(req, { ...ok, now: now + TTL_MS + 1 }), /expired/);
+  assert.throws(() => checkDecision(req, { ...ok, now: now + TTL_MS + 1 }), (e) => e.state === 'expired');
+  assert.throws(() => checkDecision(req, { ...ok, currentOp: { ...op, description: 'edited' } }), (e) => e.state === 'invalidated');
+  assert.throws(() => checkDecision(req, { ...ok, decider: REQUESTER }), (e) => e.state === undefined); // not final: another admin may still approve
   assert.throws(() => checkDecision({ ...req, state: 'sent' }, ok), /already sent/);
   assert.throws(() => checkDecision(null, ok), Invalid);
   assert.equal(view(req, now + TTL_MS + 1).state, 'expired');
