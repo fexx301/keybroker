@@ -419,14 +419,14 @@ function Admin() {
     setData(state);
     try {
       const keys = [...new Set(state.connections.flatMap((c) => [legacyKey(c.id), hostKey(originOf(c))]))];
-      // Asked in small batches, following lastEvaluatedKey: with many keys in one request Atlassian returned an empty
-      // list once and an error once, which would show approved hosts as unapproved.
-      const g = { results: [] };
-      for (let i = 0; i < keys.length; i += 5) {
+      // Multi-key lookups proved unreliable on the demo site (approved hosts came back missing while calls to them
+      // worked), so ask for one key at a time; if that finds nothing, read the whole list, page by page.
+      const g = { results: (await Promise.all(keys.map((key) => permissions.egress.get({ keys: [key] })))).flatMap((r) => r.results ?? []) };
+      if (!g.results.length) {
         let token;
         do {
-          const page = await permissions.egress.get({ keys: keys.slice(i, i + 5), ...(token ? { nextPageToken: token } : {}) });
-          g.results.push(...page.results);
+          const page = await permissions.egress.get(token ? { nextPageToken: token } : {});
+          g.results.push(...(page.results ?? []));
           token = page.lastEvaluatedKey;
         } while (token);
       }
