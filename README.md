@@ -1,3 +1,5 @@
+<img src="assets/keybroker.png" alt="" width="96" align="left">
+
 # Keybroker
 
 **Store an integration credential once. Let Jira Automation rules, Rovo agents and MCP clients call named operations with it, without any of them ever receiving it.**

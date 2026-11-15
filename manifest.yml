@@ -75,6 +75,7 @@ modules:
   rovo:agent:
     - key: keybroker-agent
       name: Keybroker
+      icon: resource:brand;keybroker.png
       description: Calls the outside APIs your admin approved in Keybroker, by name, without ever seeing a credential.
       prompt: |
         You help people use the integrations a Jira administrator approved in Keybroker.
@@ -128,6 +129,8 @@ modules:
     - key: adminResolver
       handler: index.adminResolver
 resources:
+  - key: brand
+    path: assets
   - key: admin
     path: src/frontend/admin.jsx
   - key: automation-config
