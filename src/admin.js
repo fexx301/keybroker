@@ -2,7 +2,7 @@
 // the page is only shown to admins, but the resolver is the trust boundary.
 import api, { route } from '@forge/api';
 import Resolver from '@forge/resolver';
-import { checkDecision, view } from './core/approvals.js';
+import { decide, view } from './core/approvals.js';
 import { call, Refused } from './core/broker.js';
 import { checkSecret, Invalid, validateConnection, validateOperation } from './core/operations.js';
 import { deps } from './deps.js';
@@ -124,31 +124,23 @@ resolver.define('testOperation', admin(async ({ name, params }, context) => {
 
 resolver.define('requests', admin(async () => (await store.listRequests()).slice(0, 50).map((r) => view(r, Date.now()))));
 
-// The only way to release a pending request: a Jira admin, from this page. Not reachable from any action or MCP tool.
-// Approving runs the whole broker path again, as the original caller; jira-issue parameters are re-checked as the approver.
+// Approve or reject, as a Jira admin, from this page only (not reachable from any action or MCP tool). Approving sends
+// nothing: the caller's own next identical call releases it, so Jira visibility is checked as the caller. One decision
+// per request (atomic claim).
 resolver.define('decideRequest', admin(async ({ id, approve }, context) => {
   const req = await store.getRequest(String(id ?? ''));
   const decider = context.accountId;
+  let decided;
   try {
-    checkDecision(req, { approve: Boolean(approve), decider, currentOp: await store.getOperation(req?.operation ?? ''), now: Date.now() });
+    decided = await decide(req, { approve: Boolean(approve), decider, currentOp: await store.getOperation(req?.operation ?? ''), now: Date.now(), claim: store.claim });
   } catch (e) {
     // Expired or invalidated: record it so the request leaves the queue instead of failing on every click.
     if (e.state) await store.saveRequest({ ...req, state: e.state, reason: e.message, decidedBy: decider, decidedAt: new Date().toISOString() });
     throw e;
   }
-  // shortcut: no compare-and-set in KVS; marking before sending narrows, but does not close, a double-approve race.
-  await store.saveRequest({ ...req, state: approve ? 'sending' : 'rejected', decidedBy: decider, decidedAt: new Date().toISOString() });
-  log(approve ? 'request.approved' : 'request.rejected', { id: req.id, operation: req.operation });
-  if (!approve) return view({ ...req, state: 'rejected', decidedBy: decider }, Date.now());
-  let done;
-  try {
-    const result = await call({ operation: req.operation, params: req.params, caller: req.caller, surface: 'agent', kind: req.kind, approval: { request: req.id, by: decider } }, deps);
-    done = { ...req, state: 'sent', decidedBy: decider, result };
-  } catch (e) {
-    done = { ...req, state: 'failed', decidedBy: decider, reason: e instanceof Refused ? e.message : 'unexpected failure' };
-  }
-  await store.saveRequest(done);
-  return view(done, Date.now());
+  await store.saveRequest(decided);
+  log(approve ? 'request.approved' : 'request.rejected', { id: decided.id, operation: decided.operation });
+  return view(decided, Date.now());
 }));
 
 resolver.define('activity', admin(async ({ cursor }) => store.activity(50, cursor)));

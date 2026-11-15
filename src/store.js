@@ -41,6 +41,15 @@ export const store = {
   deleteSecret: (connectionId) => kvs.deleteSecret(credKey(connectionId)),
 
   getRequest: (id) => kvs.get(REQ + id),
+  // Atomic "first one wins" (FAIL_IF_EXISTS). Kept outside the req: prefix. Any error counts as not claimed: fail closed.
+  claim: async (key) => {
+    try {
+      await kvs.set(`claim:${key}`, { at: new Date().toISOString() }, { keyPolicy: 'FAIL_IF_EXISTS' });
+      return true;
+    } catch {
+      return false;
+    }
+  },
   saveRequest: (r) => kvs.set(REQ + r.id, r),
   // shortcut: reads every request and sorts in memory; fine for hundreds, page by key if volume grows.
   listRequests: async () => (await all(REQ)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),

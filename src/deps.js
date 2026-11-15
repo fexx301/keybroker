@@ -1,6 +1,6 @@
 // What the broker needs from Forge, shared by the agent/Automation entry points and the admin resolver.
 import api, { fetch, route } from '@forge/api';
-import { newRequest } from './core/approvals.js';
+import { findOpen, newRequest } from './core/approvals.js';
 import { store } from './store.js';
 
 export const deps = {
@@ -18,6 +18,9 @@ export const deps = {
     await store.saveRequest(r);
     return r;
   },
+  findOpenRequest: async ({ caller, op, params }) => findOpen(await store.listRequests(), { caller, op, params, now: Date.now() }),
+  claim: store.claim,
+  finishRequest: async (id, patch) => store.saveRequest({ ...(await store.getRequest(id)), ...patch, finishedAt: new Date().toISOString() }),
   now: () => new Date().toISOString(),
   record: async (entry) => {
     console.log(JSON.stringify({ event: `call.${entry.outcome}`, ...entry }));

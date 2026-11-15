@@ -40,7 +40,13 @@ async function forAgent(payload, context, kind) {
   try {
     const result = await run(payload, context, 'agent', kind);
     if (result?.pending) {
-      return { pending: { request: result.pending, expiresAt: result.expiresAt, note: 'Nothing was sent. A Jira admin other than you must approve this request in Jira settings > Apps > Keybroker; keybroker-list shows its state.' } };
+      return {
+        pending: {
+          request: result.pending,
+          expiresAt: result.expiresAt,
+          note: `Nothing was sent${result.existing ? '; this request was already waiting' : ''}. A Jira admin other than you must approve it in Jira settings > Apps > Keybroker. Once keybroker-list shows it approved, call keybroker-send again with the same operation and parameters: that call sends it.`,
+        },
+      };
     }
     return { result };
   } catch (e) {

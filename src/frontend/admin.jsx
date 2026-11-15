@@ -294,15 +294,29 @@ function OperationForm({ initial, connections, act, onDone }) {
   );
 }
 
-// Agent calls held for approval. Approve re-runs every check as the original caller; you cannot approve your own request.
-function Approvals({ act, me, version }) {
+// Agent calls held for approval. Approving sends nothing: the caller's own next identical call sends it, with every
+// check run as them. You cannot approve your own request. The page shows the state the backend returns.
+function Approvals({ me, version }) {
   const [reqs, setReqs] = useState(null);
   const [error, setError] = useState(null);
+  const [note, setNote] = useState(null);
   const load = () => invoke('requests').then(setReqs, (e) => setError(reason(e)));
   useEffect(() => {
     load();
   }, [version]);
-  const decide = (id, approve, label) => act(async () => (await invoke('decideRequest', { id, approve }), await load()), label);
+  const OUTCOME = {
+    approved: (r) => `Request ${r.id} approved. Nothing has been sent: it goes out when the requester sends it again.`,
+    rejected: (r) => `Request ${r.id} rejected. Nothing was sent.`,
+  };
+  const decide = (id, approve) => async () => {
+    try {
+      const r = await invoke('decideRequest', { id, approve });
+      setNote({ ok: Boolean(OUTCOME[r.state]), text: (OUTCOME[r.state] ?? ((x) => `Request ${x.id} is ${x.state}${x.reason ? `: ${x.reason}` : ''}.`))(r) });
+    } catch (e) {
+      setNote({ ok: false, text: reason(e) });
+    }
+    await load();
+  };
   const pending = (reqs ?? []).filter((r) => r.state === 'pending');
   const rows = (reqs ?? []).slice(0, 15).map((r) => ({
     key: r.id,
@@ -310,17 +324,19 @@ function Approvals({ act, me, version }) {
       { key: 'op', content: <Text><Strong>{r.operation}</Strong> · {r.id}</Text> },
       { key: 'params', content: <Code>{JSON.stringify(r.params)}</Code> },
       { key: 'caller', content: <User accountId={r.caller} /> },
-      { key: 'state', content: <Lozenge appearance={{ pending: 'moved', sent: 'success', rejected: 'removed', failed: 'removed', expired: 'default' }[r.state] ?? 'default'}>{r.state}</Lozenge> },
+      { key: 'state', content: <Lozenge appearance={{ pending: 'moved', approved: 'inprogress', sent: 'success', rejected: 'removed', failed: 'removed', unknown: 'removed' }[r.state] ?? 'default'}>{r.state}</Lozenge> },
       {
         key: 'actions',
         content:
           r.state === 'pending' ? (
             <ButtonGroup>
-              <Button appearance="primary" isDisabled={r.caller === me} onClick={decide(r.id, true, `Request ${r.id} approved and sent.`)}>
-                Approve and send
+              <Button appearance="primary" isDisabled={r.caller === me} onClick={decide(r.id, true)}>
+                Approve
               </Button>
-              <Button onClick={decide(r.id, false, `Request ${r.id} rejected; nothing was sent.`)}>Reject</Button>
+              <Button onClick={decide(r.id, false)}>Reject</Button>
             </ButtonGroup>
+          ) : r.state === 'approved' ? (
+            <Text>Waiting for the requester to send it</Text>
           ) : (
             <Text>{r.reason ?? (r.result ? JSON.stringify(r.result) : '')}</Text>
           ),
@@ -334,6 +350,7 @@ function Approvals({ act, me, version }) {
         <Button onClick={load}>Refresh</Button>
       </Inline>
       {error && <SectionMessage appearance="error"><Text>{error}</Text></SectionMessage>}
+      {note && <SectionMessage appearance={note.ok ? 'success' : 'warning'}><Text>{note.text}</Text></SectionMessage>}
       {pending.some((r) => r.caller === me) && <Text>You cannot approve your own requests; another Jira admin must.</Text>}
       <DynamicTable
         head={{ cells: ['Request', 'Parameters', 'Requested by', 'State', ''].map((content, i) => ({ key: String(i), content })) }}
@@ -514,7 +531,7 @@ function Admin() {
         <Text>Add a connection before defining operations.</Text>
       )}
 
-      <Approvals act={act} me={data.me} version={formKey} />
+      <Approvals me={data.me} version={formKey} />
 
       <Activity key={activityKey} />
     </Stack>
