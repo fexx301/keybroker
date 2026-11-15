@@ -142,7 +142,12 @@ export function buildRequest(conn, op, values, secret) {
   const v = checkValues(op, values);
   const path = op.path.replace(/\{([^}]*)\}/g, (_, name) => encodeURIComponent(v[name]));
   const secretUrl = conn.auth.scheme === 'url' && secret ? checkSecret(conn, secret) : null;
-  const url = secretUrl ? new URL(secretUrl.origin + secretUrl.pathname.replace(/\/+$/, '') + (path === '/' ? '' : path) + secretUrl.search) : new URL(conn.baseUrl + path);
+  const origin = secretUrl ? secretUrl.origin : new URL(conn.baseUrl).origin;
+  // The exact path we mean to send. URL parsing must not change it: a value such as "..", or placeholders that
+  // combine into one, would otherwise be normalised away and move the request to another route on the same service.
+  const intended = (secretUrl ? secretUrl.pathname.replace(/\/+$/, '') + (path === '/' ? '' : path) : conn.baseUrl.slice(origin.length) + path) || '/';
+  const url = new URL(origin + intended + (secretUrl ? secretUrl.search : ''));
+  need(url.pathname === intended, 'a parameter value would change the request path (for example "." or "..")');
   const body = {};
   for (const [name, spec] of Object.entries(op.params)) {
     if (!Object.hasOwn(v, name)) continue;
@@ -185,7 +190,11 @@ export function checkSecret(conn, value) {
 
 // Strings that must never appear in a returned field: the credential, and for a secret URL its path, query and long parts.
 export function secretFragments(conn, secret) {
-  if (conn.auth.scheme !== 'url') return [secret];
+  if (conn.auth.scheme !== 'url') {
+    // What actually goes on the wire, e.g. "Basic <base64>", and its token part on its own.
+    const wire = Object.values(authHeaders(conn, secret)).flatMap((h) => [h, h.split(' ').pop()]);
+    return [...new Set([secret, ...wire])];
+  }
   const u = new URL(secret.trim());
   const parts = [...u.pathname.split('/'), ...[...u.searchParams.values()]];
   return [secret.trim(), u.pathname + u.search, ...parts.filter((p) => p.length >= 16)];
