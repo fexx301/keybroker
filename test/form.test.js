@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatParamLines, parseParamLines, toOperation } from '../src/core/form.js';
+import { formatParamLines, paramsToRows, parseParamLines, rowsToParams, toOperation } from '../src/core/form.js';
 import { Invalid, validateOperation } from '../src/core/operations.js';
 
 test('admin form: parameter lines round-trip through a valid operation', () => {
@@ -24,4 +24,15 @@ test('admin form: parameter lines round-trip through a valid operation', () => {
 test('admin form: malformed or duplicate parameter lines are refused', () => {
   assert.throws(() => parseParamLines('repo path'), Invalid);
   assert.throws(() => parseParamLines('a query x\na query y'), Invalid);
+});
+
+test('admin form: editor rows round-trip, including Jira work items and fixed values', () => {
+  const params = parseParamLines('repo path [a-z0-9-]{1,100}\nticket query jira-issue\nstate query open|closed optional\nsource body = Keybroker');
+  const rows = paramsToRows(params);
+  assert.deepEqual(rows.map((r) => r.kind), ['pattern', 'jira', 'pattern', 'fixed']);
+  assert.deepEqual(rowsToParams(rows), params);
+  assert.deepEqual(rowsToParams([...rows, { id: 'x', name: '  ', in: 'query', kind: 'pattern', value: '' }]), params); // blank rows ignored
+  assert.throws(() => rowsToParams([rows[0], { ...rows[0], id: 'dup' }]), Invalid);
+  const op = validateOperation(toOperation({ name: 'rows-op', connectionId: 'c1', method: 'POST', path: '/repos/{repo}', params: rows, returns: '', allowed: [] }));
+  assert.equal(op.params.ticket.pattern, 'jira-issue');
 });

@@ -1,5 +1,5 @@
 // Converts the admin page's text fields to and from an operation. Validation proper is validateOperation's job.
-import { Invalid } from './operations.js';
+import { Invalid, JIRA_ISSUE } from './operations.js';
 
 // One parameter per line: "name in pattern", with an optional trailing "optional" for query/body parameters,
 // or "name in = value" for a value the admin fixes.
@@ -30,6 +30,33 @@ export function formatParamLines(params) {
     .join('\n');
 }
 
+// The admin page edits parameters as rows. kind: 'pattern' (a regular expression), 'jira' (a work item key the
+// caller can see) or 'fixed' (a value the admin sets). Rows without a name are ignored.
+export function paramsToRows(params) {
+  return Object.entries(params ?? {}).map(([name, p], i) => ({
+    id: `r${i}`,
+    name,
+    in: p.in,
+    kind: p.fixed !== undefined ? 'fixed' : p.pattern === JIRA_ISSUE ? 'jira' : 'pattern',
+    value: p.fixed ?? (p.pattern === JIRA_ISSUE ? '' : p.pattern),
+    required: p.fixed !== undefined || Boolean(p.required),
+  }));
+}
+
+export function rowsToParams(rows) {
+  const params = {};
+  for (const r of rows ?? []) {
+    const name = String(r.name ?? '').trim();
+    if (!name) continue;
+    if (Object.hasOwn(params, name)) throw new Invalid(`parameter ${name} is listed twice`);
+    params[name] =
+      r.kind === 'fixed'
+        ? { in: r.in, fixed: r.value ?? '' }
+        : { in: r.in, pattern: r.kind === 'jira' ? JIRA_ISSUE : String(r.value ?? '').trim(), required: r.in === 'path' || Boolean(r.required) };
+  }
+  return params;
+}
+
 export const splitList = (text) =>
   String(text ?? '')
     .split(/[,\s]+/)
@@ -42,7 +69,7 @@ export function toOperation(form) {
     connectionId: form.connectionId,
     method: form.method,
     path: form.path?.trim(),
-    params: parseParamLines(form.params),
+    params: Array.isArray(form.params) ? rowsToParams(form.params) : parseParamLines(form.params),
     returns: splitList(form.returns),
     allowed: form.allowed ?? [],
     approval: Boolean(form.approval),

@@ -88,6 +88,40 @@ resolver.define('deleteOperation', admin(async ({ name }) => {
   return true;
 }));
 
+// One click for a first look: a connection to Postman Echo (a public test endpoint that echoes requests), an obviously
+// fake credential, and an operation whose parameter must be a Jira work item the caller can see. Safe to repeat.
+resolver.define('sampleSetup', admin(async (_, context) => {
+  const conn = validateConnection({ id: 'sample-echo', name: 'Sample: Postman Echo', baseUrl: 'https://postman-echo.com', auth: { scheme: 'bearer' } });
+  const existing = await store.getConnection(conn.id);
+  if (existing && existing.baseUrl !== conn.baseUrl) throw new Error('A connection named sample-echo already exists with another destination.');
+  await store.saveConnection(conn);
+  if (!(await store.hasSecret(conn.id))) await store.setSecret(conn.id, 'keybroker-sample-not-a-secret');
+  await store.saveOperation(
+    validateOperation({
+      name: 'sample-echo',
+      description: 'Sample: echoes a work item key you can see. Postman Echo is a public test endpoint.',
+      connectionId: conn.id,
+      method: 'GET',
+      path: '/get',
+      params: { ticket: { in: 'query', pattern: 'jira-issue', required: true } },
+      returns: ['args.ticket', 'url'],
+      allowed: [context.accountId],
+    }),
+  );
+  log('sample.created', {});
+  return { origin: 'https://postman-echo.com' };
+}));
+
+// Test an operation as the signed-in admin, through the same broker path rules and agents use (allow-list included).
+resolver.define('testOperation', admin(async ({ name, params }, context) => {
+  try {
+    return { result: await call({ operation: name, params, caller: context.accountId, surface: 'admin test' }, deps) };
+  } catch (e) {
+    if (e instanceof Refused) return { refused: e.message };
+    throw e;
+  }
+}));
+
 resolver.define('requests', admin(async () => (await store.listRequests()).slice(0, 50).map((r) => view(r, Date.now()))));
 
 // The only way to release a pending request: a Jira admin, from this page. Not reachable from any action or MCP tool.

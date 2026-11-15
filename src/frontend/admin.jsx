@@ -17,14 +17,13 @@ import ForgeReconciler, {
   Stack,
   Strong,
   Text,
-  TextArea,
   Textfield,
   User,
   UserPicker,
   xcss,
 } from '@forge/react';
 import React, { useEffect, useState } from 'react';
-import { formatParamLines, toOperation } from '../core/form.js';
+import { paramsToRows, toOperation } from '../core/form.js';
 
 // Atlassian approves a host once across all of an app's egress groups, so approval is tracked per host.
 // Groups are keyed by host; older per-connection groups (sealed-<id>) are still read so earlier approvals count.
@@ -37,6 +36,18 @@ const option = (value, label = value) => ({ label, value });
 const reason = (e) => String(e?.message ?? e).replace(/^There was an error invoking the function - /, '');
 const SCHEMES = [option('bearer', 'Bearer token'), option('header', 'Custom header'), option('basic', 'Basic (user:password)'), option('url', 'Secret URL (webhook)')];
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => option(m));
+const approveHost = (origin) =>
+  permissions.egress.set({
+    egresses: [
+      {
+        key: hostKey(origin),
+        description: `Keybroker: send requests carrying admin-stored credentials to ${new URL(origin).host}.`,
+        configured: [{ domain: origin, type: [EgressType.FetchBackendSide] }],
+      },
+    ],
+  });
+const PLACES = ['query', 'path', 'body'].map((p) => option(p));
+const KINDS = [option('pattern', 'Text matching a pattern'), option('jira', 'A Jira work item the caller can see'), option('fixed', 'A fixed value you set')];
 const card = xcss({ borderColor: 'color.border', borderStyle: 'solid', borderWidth: 'border.width', borderRadius: 'border.radius', padding: 'space.200' });
 
 // approvalKeys: the egress groups that approve this connection's host ([] = not approved, null = unknown).
@@ -46,16 +57,7 @@ function ConnectionCard({ c, approvalKeys, sharedWith, act }) {
   const host = new URL(c.baseUrl).host;
   const approved = approvalKeys === null ? null : approvalKeys.length > 0;
   const also = sharedWith.length ? ` This also applies to ${sharedWith.join(', ')}.` : '';
-  const approve = () =>
-    permissions.egress.set({
-      egresses: [
-        {
-          key: hostKey(originOf(c)),
-          description: `Keybroker: send requests carrying admin-stored credentials to ${host}.`,
-          configured: [{ domain: originOf(c), type: [EgressType.FetchBackendSide] }],
-        },
-      ],
-    });
+  const approve = () => approveHost(originOf(c));
   const removeApproval = async () => {
     for (const key of approvalKeys ?? []) await permissions.egress.deleteGroup({ key });
   };
@@ -147,12 +149,98 @@ function NewConnection({ act }) {
   );
 }
 
+// One row per parameter: its name, where it goes, what it accepts. Callers can supply only these.
+function ParamEditor({ rows, onChange }) {
+  const update = (id, patch) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  return (
+    <Stack space="space.100">
+      {rows.map((r) => (
+        <Box key={r.id} xcss={card}>
+          <Inline space="space.150" alignBlock="end" shouldWrap>
+            <Stack>
+              <Label labelFor={`p-name-${r.id}`}>Name</Label>
+              <Textfield id={`p-name-${r.id}`} defaultValue={r.name} placeholder="repo" onChange={(e) => update(r.id, { name: e.target.value })} />
+            </Stack>
+            <Stack>
+              <Label labelFor={`p-in-${r.id}`}>Goes in</Label>
+              <Select inputId={`p-in-${r.id}`} options={PLACES} defaultValue={option(r.in)} onChange={(o) => update(r.id, { in: o.value })} />
+            </Stack>
+            <Stack>
+              <Label labelFor={`p-kind-${r.id}`}>Accepts</Label>
+              <Select inputId={`p-kind-${r.id}`} options={KINDS} defaultValue={KINDS.find((k) => k.value === r.kind)} onChange={(o) => update(r.id, { kind: o.value })} />
+            </Stack>
+            {r.kind !== 'jira' && (
+              <Stack>
+                <Label labelFor={`p-val-${r.id}`}>{r.kind === 'fixed' ? 'Value' : 'Pattern (regular expression)'}</Label>
+                <Textfield id={`p-val-${r.id}`} defaultValue={r.value} placeholder={r.kind === 'fixed' ? 'Keybroker' : '[a-z0-9-]{1,100}'} onChange={(e) => update(r.id, { value: e.target.value })} />
+              </Stack>
+            )}
+            {r.in !== 'path' && r.kind !== 'fixed' && (
+              <Checkbox name={`p-req-${r.id}`} label="Required" defaultChecked={r.required} onChange={(e) => update(r.id, { required: e.target.checked })} />
+            )}
+            <Button appearance="subtle" onClick={() => onChange(rows.filter((x) => x.id !== r.id))}>
+              Remove
+            </Button>
+          </Inline>
+        </Box>
+      ))}
+      <Inline>
+        <Button onClick={() => onChange([...rows, { id: `n${Date.now()}`, name: '', in: 'query', kind: 'pattern', value: '', required: true }])}>Add parameter</Button>
+      </Inline>
+    </Stack>
+  );
+}
+
+// Runs one operation as you, through the same path rules and agents use, and shows exactly what comes back.
+function TestPanel({ op, onClose, onRan }) {
+  const fields = Object.entries(op.params).filter(([, p]) => p.fixed === undefined);
+  const [values, setValues] = useState({});
+  const [outcome, setOutcome] = useState(null);
+  const run = async () => {
+    try {
+      setOutcome(await invoke('testOperation', { name: op.name, params: values }));
+    } catch (e) {
+      setOutcome({ refused: reason(e) });
+    }
+    onRan();
+  };
+  return (
+    <Box xcss={card}>
+      <Stack space="space.100">
+        <Heading as="h4">Test {op.name}</Heading>
+        <Text>Runs as you, with the same checks a rule or agent gets. {op.method === 'GET' ? '' : 'This is a write: the request is really sent.'}</Text>
+        {fields.map(([name, p]) => (
+          <Stack key={name}>
+            <Label labelFor={`t-${name}`}>{name}</Label>
+            <Textfield id={`t-${name}`} placeholder={p.pattern === 'jira-issue' ? 'A work item key, e.g. MOBL-57' : p.pattern} onChange={(e) => setValues({ ...values, [name]: e.target.value })} />
+          </Stack>
+        ))}
+        {!fields.length && <Text>This operation takes no parameters.</Text>}
+        <ButtonGroup>
+          <Button appearance="primary" onClick={run}>Run test</Button>
+          <Button onClick={onClose}>Close</Button>
+        </ButtonGroup>
+        {outcome?.result && (
+          <SectionMessage appearance="success" title="Returned (only the declared fields)">
+            <Code>{JSON.stringify(outcome.result)}</Code>
+          </SectionMessage>
+        )}
+        {outcome?.refused && (
+          <SectionMessage appearance="warning" title="Refused">
+            <Text>{outcome.refused}</Text>
+          </SectionMessage>
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
 function OperationForm({ initial, connections, act, onDone }) {
   const editing = Boolean(initial);
   const [f, setF] = useState(
     initial
-      ? { ...initial, params: formatParamLines(initial.params), returns: initial.returns.join(', ') }
-      : { method: 'GET', connectionId: connections[0]?.id, allowed: [] },
+      ? { ...initial, params: paramsToRows(initial.params), returns: initial.returns.join(', ') }
+      : { method: 'GET', connectionId: connections[0]?.id, allowed: [], params: [] },
   );
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const conns = connections.map((c) => option(c.id, c.name));
@@ -172,9 +260,11 @@ function OperationForm({ initial, connections, act, onDone }) {
         <Select inputId="o-method" options={METHODS} defaultValue={option(f.method)} onChange={(o) => setF({ ...f, method: o.value })} />
         <Label labelFor="o-path">Path</Label>
         <Textfield id="o-path" defaultValue={f.path} onChange={set('path')} placeholder="/repos/acme/{repo}/issues" />
-        <Label labelFor="o-params">Parameters, one per line: name, where it goes (path, query or body), allowed pattern, or "= value" to fix it</Label>
-        <TextArea id="o-params" defaultValue={f.params} onChange={set('params')} placeholder={'repo path [a-z0-9-]{1,100}\nstate query open|closed optional\nusername body = Keybroker'} />
-        <HelperMessage>A value that does not match its whole pattern is refused before any request. Add "optional" to a query or body parameter. A fixed value cannot be supplied or changed by callers. The pattern jira-issue accepts only a work item key the caller can see in Jira.</HelperMessage>
+        <Label labelFor="o-params">Parameters callers may supply</Label>
+        <ParamEditor rows={f.params} onChange={(params) => setF({ ...f, params })} />
+        <HelperMessage>
+          Anything that does not match is refused before a request is made. Use {'{name}'} in the path for a path parameter. A Jira work item is checked as the caller, so Jira's own permissions decide what they may name. Fixed values cannot be supplied or changed by callers.
+        </HelperMessage>
         <Label labelFor="o-returns">Returned fields</Label>
         <Textfield id="o-returns" defaultValue={f.returns} onChange={set('returns')} placeholder="0.title, 0.number" />
         <HelperMessage>Only these fields come back, by dotted path. Leave empty for a write: any 2xx succeeds and callers get only the status.</HelperMessage>
@@ -303,6 +393,8 @@ function Admin() {
   const [approved, setApproved] = useState(new Map());
   const [message, setMessage] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [testing, setTesting] = useState(null);
+  const [activityKey, setActivityKey] = useState(0);
   const [formKey, setFormKey] = useState(0);
 
   const refresh = async () => {
@@ -353,6 +445,7 @@ function Admin() {
         key: 'actions',
         content: (
           <ButtonGroup>
+            <Button onClick={() => setTesting(o)}>Test</Button>
             <Button onClick={() => setEditing(o)}>Edit</Button>
             <Button appearance="danger" onClick={act(() => invoke('deleteOperation', { name: o.name }), `Operation ${o.name} deleted.`)}>
               Delete
@@ -375,6 +468,27 @@ function Admin() {
         </SectionMessage>
       )}
 
+      {!data.connections.some((c) => c.id === 'sample-echo') && (
+        <SectionMessage appearance="discovery" title={data.connections.length ? 'Want a quick example?' : 'New to Keybroker? Start with a sample'}>
+          <Text>
+            Adds a connection to Postman Echo (a public test endpoint), a fake credential and an operation that accepts only a Jira work item you can see.
+            Atlassian asks you to approve postman-echo.com; then press Test on sample-echo.
+          </Text>
+          <Inline>
+            <Button
+              appearance="primary"
+              onClick={act(async () => {
+                const { origin } = await invoke('sampleSetup');
+                // Atlassian approves a host once; asking again for an approved host fails.
+                if (!(approved instanceof Map && approved.has(origin))) await approveHost(origin);
+              }, 'Sample added. Press Test on sample-echo and enter a work item key you can see, then one you cannot.')}
+            >
+              Add the sample
+            </Button>
+          </Inline>
+        </SectionMessage>
+      )}
+
       <Heading as="h2">Connections</Heading>
       {data.connections.map((c) => (
         <ConnectionCard
@@ -393,6 +507,7 @@ function Admin() {
         rows={rows}
         emptyView="No operations yet."
       />
+      {testing && <TestPanel key={testing.name} op={testing} onClose={() => setTesting(null)} onRan={() => setActivityKey((k) => k + 1)} />}
       {data.connections.length ? (
         <OperationForm key={editing ? `e-${editing.name}-${formKey}` : `o${formKey}`} initial={editing} connections={data.connections} act={act} onDone={finishEdit} />
       ) : (
@@ -401,7 +516,7 @@ function Admin() {
 
       <Approvals act={act} me={data.me} version={formKey} />
 
-      <Activity />
+      <Activity key={activityKey} />
     </Stack>
   );
 }
