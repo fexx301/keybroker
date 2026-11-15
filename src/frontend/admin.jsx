@@ -36,16 +36,26 @@ const option = (value, label = value) => ({ label, value });
 const reason = (e) => String(e?.message ?? e).replace(/^There was an error invoking the function - /, '');
 const SCHEMES = [option('bearer', 'Bearer token'), option('header', 'Custom header'), option('basic', 'Basic (user:password)'), option('url', 'Secret URL (webhook)')];
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => option(m));
-const approveHost = (origin) =>
-  permissions.egress.set({
-    egresses: [
-      {
-        key: hostKey(origin),
-        description: `Keybroker: send requests carrying admin-stored credentials to ${new URL(origin).host}.`,
-        configured: [{ domain: origin, type: [EgressType.FetchBackendSide] }],
-      },
-    ],
-  });
+const approveHost = async (origin) => {
+  try {
+    await permissions.egress.set({
+      egresses: [
+        {
+          key: hostKey(origin),
+          description: `Keybroker: send requests carrying admin-stored credentials to ${new URL(origin).host}.`,
+          configured: [{ domain: origin, type: [EgressType.FetchBackendSide] }],
+        },
+      ],
+    });
+  } catch (e) {
+    const m = String(e?.message ?? e);
+    // Atlassian answers "Dry run failed" when the host is already approved (seen on the demo site): nothing to do.
+    if (/dry run failed/i.test(m)) return;
+    // Seen when a Jira admin who is not a site admin tries to approve.
+    if (/failed to fetch app data/i.test(m)) throw new Error('Atlassian refused the approval request. Try again as a site admin.');
+    throw e;
+  }
+};
 const PLACES = ['query', 'path', 'body'].map((p) => option(p));
 const KINDS = [option('pattern', 'Text matching a pattern'), option('jira', 'A Jira work item the caller can see'), option('fixed', 'A fixed value you set')];
 const card = xcss({ borderColor: 'color.border', borderStyle: 'solid', borderWidth: 'border.width', borderRadius: 'border.radius', padding: 'space.200' });
@@ -434,16 +444,24 @@ function Admin() {
       // worked), so ask for one key at a time.
       // Also read the whole list, page by page: an approval can live under the key of a deleted connection that shared
       // the host, which a lookup by current keys would miss.
-      const g = { results: (await Promise.all(keys.map((key) => permissions.egress.get({ keys: [key] })))).flatMap((r) => r.results ?? []) };
-      let token;
-      do {
-        const page = await permissions.egress.get(token ? { nextPageToken: token } : {});
-        g.results.push(...(page.results ?? []));
-        token = page.lastEvaluatedKey;
-      } while (token);
+      const lookup = async () => {
+        const results = (await Promise.all(keys.map((key) => permissions.egress.get({ keys: [key] })))).flatMap((r) => r.results ?? []);
+        let token;
+        do {
+          const page = await permissions.egress.get(token ? { nextPageToken: token } : {});
+          results.push(...(page.results ?? []));
+          token = page.lastEvaluatedKey;
+        } while (token);
+        return results;
+      };
       // origin -> keys of the groups that approve it
       const byOrigin = new Map();
-      for (const r of g.results) for (const d of r.configured ?? []) byOrigin.set(new URL(d.domain).origin, [...new Set([...(byOrigin.get(new URL(d.domain).origin) ?? []), r.key])]);
+      const add = (results) => {
+        for (const r of results) for (const d of r.configured ?? []) byOrigin.set(new URL(d.domain).origin, [...new Set([...(byOrigin.get(new URL(d.domain).origin) ?? []), r.key])]);
+      };
+      add(await lookup());
+      // Lookups still sometimes leave out an approved host: look once more before calling anything "not approved".
+      if (state.connections.some((c) => !byOrigin.has(originOf(c)))) add(await lookup());
       setApproved(byOrigin);
     } catch (e) {
       // Unknown is not the same as "not approved": say so instead of guessing.
