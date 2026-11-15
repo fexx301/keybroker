@@ -112,6 +112,29 @@ resolver.define('sampleSetup', admin(async (_, context) => {
   return { origin: 'https://postman-echo.com' };
 }));
 
+// Template: post to a Slack channel through an incoming webhook. The webhook URL is the secret; the admin pastes it into
+// the connection card afterwards. Automation rules post directly; tick approval on the operation to hold agent posts.
+resolver.define('slackTemplate', admin(async (_, context) => {
+  const conn = validateConnection({ id: 'slack', name: 'Slack', baseUrl: 'https://hooks.slack.com', auth: { scheme: 'url' } });
+  const existing = await store.getConnection(conn.id);
+  if (existing && (existing.baseUrl !== conn.baseUrl || existing.auth.scheme !== 'url')) throw new Error('A connection named slack already exists with another destination.');
+  await store.saveConnection(conn);
+  await store.saveOperation(
+    validateOperation({
+      name: 'slack-post',
+      description: 'Post a message to the Slack channel of the stored incoming webhook.',
+      connectionId: conn.id,
+      method: 'POST',
+      path: '/',
+      params: { text: { in: 'body', pattern: '[\\s\\S]{1,3000}', required: true } },
+      returns: [],
+      allowed: [context.accountId],
+    }),
+  );
+  log('template.slack', {});
+  return { origin: 'https://hooks.slack.com' };
+}));
+
 // Test an operation as the signed-in admin, through the same broker path rules and agents use (allow-list included).
 resolver.define('testOperation', admin(async ({ name, params }, context) => {
   try {

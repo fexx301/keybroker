@@ -506,7 +506,19 @@ function Admin() {
         </SectionMessage>
       )}
 
-      <Heading as="h2">Connections</Heading>
+      <Inline space="space.150" alignBlock="center">
+        <Heading as="h2">Connections</Heading>
+        {!data.connections.some((c) => c.id === 'slack') && (
+          <Button
+            onClick={act(async () => {
+              const { origin } = await invoke('slackTemplate');
+              if (!(approved instanceof Map && approved.has(origin))) await approveHost(origin);
+            }, 'Slack added. Paste your incoming-webhook URL into the Slack card and store it, then Test slack-post.')}
+          >
+            Add Slack (incoming webhook)
+          </Button>
+        )}
+      </Inline>
       {data.connections.map((c) => (
         <ConnectionCard
           key={c.id}
