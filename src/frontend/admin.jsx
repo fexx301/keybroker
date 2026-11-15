@@ -300,6 +300,7 @@ function Approvals({ me, version }) {
   const [reqs, setReqs] = useState(null);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
+  const [history, setHistory] = useState(false);
   const load = () => invoke('requests').then(setReqs, (e) => setError(reason(e)));
   useEffect(() => {
     load();
@@ -318,7 +319,8 @@ function Approvals({ me, version }) {
     await load();
   };
   const pending = (reqs ?? []).filter((r) => r.state === 'pending');
-  const rows = (reqs ?? []).slice(0, 15).map((r) => ({
+  const open = (r) => r.state === 'pending' || r.state === 'approved';
+  const rows = (reqs ?? []).filter((r) => history || open(r)).slice(0, 15).map((r) => ({
     key: r.id,
     cells: [
       { key: 'op', content: <Text><Strong>{r.operation}</Strong> · {r.id}</Text> },
@@ -348,6 +350,7 @@ function Approvals({ me, version }) {
       <Inline space="space.100" alignBlock="center">
         <Heading as="h2">Waiting for approval{pending.length ? ` (${pending.length})` : ''}</Heading>
         <Button onClick={load}>Refresh</Button>
+        <Button appearance="subtle" onClick={() => setHistory(!history)}>{history ? 'Hide history' : 'Show history'}</Button>
       </Inline>
       {error && <SectionMessage appearance="error"><Text>{error}</Text></SectionMessage>}
       {note && <SectionMessage appearance={note.ok ? 'success' : 'warning'}><Text>{note.text}</Text></SectionMessage>}
@@ -355,7 +358,7 @@ function Approvals({ me, version }) {
       <DynamicTable
         head={{ cells: ['Request', 'Parameters', 'Requested by', 'State', ''].map((content, i) => ({ key: String(i), content })) }}
         rows={rows}
-        emptyView="No requests."
+        emptyView={history ? 'No requests.' : 'Nothing is waiting for approval.'}
       />
     </Stack>
   );
@@ -420,19 +423,19 @@ function Admin() {
     try {
       const keys = [...new Set(state.connections.flatMap((c) => [legacyKey(c.id), hostKey(originOf(c))]))];
       // Multi-key lookups proved unreliable on the demo site (approved hosts came back missing while calls to them
-      // worked), so ask for one key at a time; if that finds nothing, read the whole list, page by page.
+      // worked), so ask for one key at a time.
+      // Also read the whole list, page by page: an approval can live under the key of a deleted connection that shared
+      // the host, which a lookup by current keys would miss.
       const g = { results: (await Promise.all(keys.map((key) => permissions.egress.get({ keys: [key] })))).flatMap((r) => r.results ?? []) };
-      if (!g.results.length) {
-        let token;
-        do {
-          const page = await permissions.egress.get(token ? { nextPageToken: token } : {});
-          g.results.push(...(page.results ?? []));
-          token = page.lastEvaluatedKey;
-        } while (token);
-      }
+      let token;
+      do {
+        const page = await permissions.egress.get(token ? { nextPageToken: token } : {});
+        g.results.push(...(page.results ?? []));
+        token = page.lastEvaluatedKey;
+      } while (token);
       // origin -> keys of the groups that approve it
       const byOrigin = new Map();
-      for (const r of g.results) for (const d of r.configured ?? []) byOrigin.set(new URL(d.domain).origin, [...(byOrigin.get(new URL(d.domain).origin) ?? []), r.key]);
+      for (const r of g.results) for (const d of r.configured ?? []) byOrigin.set(new URL(d.domain).origin, [...new Set([...(byOrigin.get(new URL(d.domain).origin) ?? []), r.key])]);
       setApproved(byOrigin);
     } catch (e) {
       // Unknown is not the same as "not approved": say so instead of guessing.
