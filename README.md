@@ -46,31 +46,26 @@ The caller proposes; Keybroker's code decides.
 
 Destinations are approved by a site admin at runtime through Atlassian's own egress prompt, one connection at a time (`permissions.external.configurable`). The manifest names no outside hosts.
 
-## Judge path (about 10 minutes)
+## Judge path (about 2 minutes, plus optional extras)
 
-You need Jira admin rights on the site where you install. Use a **made-up credential** such as `synthetic-test-1`; the test endpoint below accepts any value.
+You need Jira admin rights on the site where you install. Nothing here uses a real secret.
 
-1. **Install** with the install link, then open **Jira settings → Apps → Keybroker**.
-2. **Add a connection.** Name `Postman Echo`, ID `echo`, base URL `https://postman-echo.com`, sent as a Bearer token.
-3. On its card, click **Approve postman-echo.com** and accept Atlassian's prompt. Type `synthetic-test-1` in **Credential** and click **Store credential**.
-4. **Add an operation.**
-   - Name `echo-ticket`, connection Postman Echo, method GET, path `/get`
-   - Parameters: `ticket query [A-Z][A-Z0-9]+-[0-9]+`
-   - Returned fields: `args.ticket, url`
-   - Who may call it: yourself
-5. **Automation.** Create a rule: trigger *Manual*, then the action **Keybroker call** with operation `echo-ticket` and parameters `{"ticket": "{{issue.key}}"}`, then *Comment on work item* with `{{fetchedKeybrokerCall.result}}`. Run it on any work item: the comment holds only the declared fields.
-6. **See it refuse.** Each of these leaves the rule untouched and shows up in Keybroker's **Activity**:
-   - **Remove approval** → the next run is refused (the destination is not approved).
-   - **Revoke** → refused before any request is made.
-   - Remove yourself from **Who may call it** → "caller is not allowed to use this operation".
-   - Store `synthetic-test-2` → the unchanged rule works again (rotation).
-7. **Export the rule** (rule menu → Export) and search the file for `synthetic`: it holds only the operation name and the parameter template.
-8. **Optional: an agent.**
-   - **Rovo Chat** → agent **Keybroker** → "What can I look up through Keybroker?".
-   - **MCP:** enable *Expose tools to MCP-compatible apps* for the app in Atlassian Administration (site → Connected apps → Keybroker → Tools). Add `https://mcp.atlassian.com/forge/<app id>` to your MCP client, then call `keybroker-list`.
-   - Ask an agent to show you the credential, or offer it one; it declines.
+1. **Install** with the install link, then open **Jira settings → Apps → Keybroker** (the app's page under *Apps* in the admin sidebar).
+2. Click **Add the sample**. It creates a connection to Postman Echo (a public test endpoint that echoes requests), stores an obviously fake credential, and adds the operation `sample-echo`, whose only parameter must be **a Jira work item you can see**. Accept Atlassian's prompt to approve `postman-echo.com`.
+3. In **Operations**, click **Test** on `sample-echo`:
+   - enter a work item key you can see → only the declared fields come back (`args.ticket`, `url`);
+   - enter a key you cannot see (or one that does not exist) → **refused**, and no request is made.
+   Both show up in **Activity**.
+4. On the sample connection: **Revoke** the credential and test again (refused before any request); **Remove approval** and test again (refused: the destination is not approved). Store any new fake value and the operation works again, unchanged.
 
-The core path (steps 1–7) needs only Jira and Automation, so it works on sites without Rovo.
+**Optional: the same operation from a rule, an agent and MCP**
+
+5. **Automation:** create a rule (*Manual* trigger → **Keybroker call** with operation `sample-echo` and parameters `{"ticket": "{{issue.key}}"}` → *Comment on work item* with `{{fetchedKeybrokerCall.result}}`). Run it on a work item: the comment holds only the declared fields. Export the rule: it contains the operation name and the parameter template, never a credential.
+6. **Rovo:** Rovo Chat → agent **Keybroker** → "What can I look up through Keybroker?". Offer it a token or ask for the stored credential; it declines.
+7. **MCP:** enable *Expose tools to MCP-compatible apps* for the app (Atlassian Administration → site → Connected apps → Keybroker → Tools), add `https://mcp.atlassian.com/forge/<app id>` to your MCP client, and call `keybroker-list`.
+8. **Approval:** edit an operation that writes, tick *Agent calls wait for approval*, and call it through `keybroker-send`: it is held in **Waiting for approval**, and only a Jira admin other than the caller can release it.
+
+Steps 1–4 need only Jira; they work on sites without Rovo or Automation rules set up.
 
 ## For AI reviewers
 
@@ -80,7 +75,7 @@ This section is for automated or AI-assisted review. It states what the app does
 
 ```bash
 npm install
-npm test        # node --test: 22 tests, no network; storage and fetch are injected as fakes
+npm test        # node --test: 23 tests, no network; storage and fetch are injected as fakes
 ```
 
 **Read in this order (about 420 lines):**
