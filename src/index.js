@@ -66,6 +66,6 @@ export async function listForAgent(payload, context) {
       .filter((o) => me && o.allowed.includes(me))
       .map((o) => ({ name: o.name, description: o.description, method: o.method, destination: host[o.connectionId] ?? null, params: o.params, returns: o.returns, needsApproval: o.approval })),
     // This caller's own approval requests, newest first, so an agent can report what happened.
-    myRequests: reqs.filter((r) => me && r.caller === me).slice(0, 10).map((r) => view(r, Date.now())),
+    myRequests: reqs.filter((r) => me && r.caller === me).slice(0, 10).map((r) => view(r, Date.now(), ops)),
   };
 }

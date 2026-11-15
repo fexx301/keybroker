@@ -127,6 +127,11 @@ test('decisions: no self-approval, no approving a changed operation, an expired 
   assert.equal(view(req, now + TTL_MS + 1).state, 'expired');
   assert.equal(view({ ...req, state: 'approved' }, now + TTL_MS + 1).state, 'expired'); // approved but unsent also expires
   assert.match(view({ ...req, state: 'approved' }, now).next, /call keybroker-send again/);
+  // Given the current operations, an open request for a changed or deleted operation shows as invalidated.
+  assert.equal(view({ ...req, state: 'approved' }, now, [op]).state, 'approved');
+  assert.equal(view({ ...req, state: 'approved' }, now, [{ ...op, path: '/other' }]).state, 'invalidated');
+  assert.equal(view(req, now, []).next, null);
+  assert.equal(view({ ...req, state: 'sent' }, now, []).state, 'sent'); // history is left as it was
 });
 
 test('Automation runs approval-required operations directly', async () => {

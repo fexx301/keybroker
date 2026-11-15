@@ -62,9 +62,10 @@ const NEXT = {
   approved: 'approved: call keybroker-send again with the same operation and parameters to send it',
 };
 
-// What the requester (via keybroker-list) and the admin page see.
-export function view(req, now) {
-  return {
+// What the requester (via keybroker-list) and the admin page see. Given the current operations, an open request whose
+// operation was deleted or changed is shown as invalidated: it can never be released.
+export function view(req, now, ops) {
+  const v = {
     id: req.id,
     operation: req.operation,
     params: req.params,
@@ -77,4 +78,6 @@ export function view(req, now) {
     reason: req.reason ?? null,
     next: NEXT[isExpired(req, now) ? 'expired' : req.state] ?? null,
   };
+  const stale = ops && (v.state === 'pending' || v.state === 'approved') && JSON.stringify(ops.find((o) => o.name === req.operation)) !== req.opSnapshot;
+  return stale ? { ...v, state: 'invalidated', reason: 'the operation changed or was deleted', next: null } : v;
 }

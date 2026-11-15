@@ -145,14 +145,9 @@ resolver.define('testOperation', admin(async ({ name, params }, context) => {
   }
 }));
 
-// Open requests whose operation was deleted or changed can never be released: show them as invalidated.
 resolver.define('requests', admin(async () => {
   const [reqs, ops] = await Promise.all([store.listRequests(), store.listOperations()]);
-  const current = Object.fromEntries(ops.map((o) => [o.name, JSON.stringify(o)]));
-  return reqs.slice(0, 50).map((r) => {
-    const v = view(r, Date.now());
-    return (v.state === 'pending' || v.state === 'approved') && current[r.operation] !== r.opSnapshot ? { ...v, state: 'invalidated', reason: 'the operation changed or was deleted', next: null } : v;
-  });
+  return reqs.slice(0, 50).map((r) => view(r, Date.now(), ops));
 }));
 
 // Approve or reject, as a Jira admin, from this page only (not reachable from any action or MCP tool). Approving sends
