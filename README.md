@@ -60,7 +60,7 @@ Destinations are approved by a site admin at runtime through Atlassian's own egr
 
 You need Jira admin rights on the site where you install. Nothing here uses a real secret.
 
-1. **Install** with the install link, then open **Jira settings → Apps → Keybroker** (the app's page under *Apps* in the admin sidebar).
+1. **Install** with the install link, then open **⚙ Settings (top right) → Marketplace apps → Keybroker** (under *Apps* in the left sidebar). Tested on a fresh free Jira site installed from the link, Nov 20, 2026.
 2. Click **Add the sample**. It creates a connection to Postman Echo (a public test endpoint that echoes requests), stores an obviously fake credential, and adds the operation `sample-echo`, whose only parameter must be **a Jira work item you can see**. Accept Atlassian's prompt to approve `postman-echo.com`.
 3. In **Operations**, click **Test** on `sample-echo`:
    - enter a work item key you can see → only the declared fields come back (`args.ticket`, `url`);
