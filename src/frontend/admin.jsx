@@ -222,7 +222,7 @@ function TestPanel({ op, onClose, onRan }) {
         {fields.map(([name, p]) => (
           <Stack key={name}>
             <Label labelFor={`t-${name}`}>{name}</Label>
-            <Textfield id={`t-${name}`} placeholder={p.pattern === 'jira-issue' ? 'A work item key, e.g. MOBL-57' : p.pattern} onChange={(e) => setValues({ ...values, [name]: e.target.value })} />
+            <Textfield id={`t-${name}`} placeholder={p.pattern === 'jira-issue' ? 'A work item key you can see, e.g. KAN-1' : p.pattern} onChange={(e) => setValues({ ...values, [name]: e.target.value })} />
           </Stack>
         ))}
         {!fields.length && <Text>This operation takes no parameters.</Text>}
