@@ -48,6 +48,14 @@ The caller proposes; Keybroker's code decides.
 
 Destinations are approved by a site admin at runtime through Atlassian's own egress prompt, one connection at a time (`permissions.external.configurable`). The manifest names no outside hosts.
 
+## Failure and load
+
+- **No retries.** Each call makes at most one outside request. If the destination cannot be reached, the call is refused ("destination unreachable or not approved by an admin") and the caller may simply call again. For an approved agent write, a missing response marks the request `unknown` and it is not retried, because it may have arrived.
+- **Errors stay short.** A non-2xx answer is refused as "destination returned N" with the status in the activity log; the response body is never shown, because it can echo the credential.
+- **Timeouts are the platform's.** Keybroker sets no timeout of its own; each call runs inside Forge's limits for a function invocation and its outbound fetch. Hitting them is handled as "no response" above.
+- **Concurrent calls are independent.** Each one is checked and sent on its own. The only shared steps are approval decisions and releases, which are claimed atomically (a KVS write that fails if the key exists), so two simultaneous approvals or releases have one winner.
+- **No rate limiting of its own.** Forge's platform quotas and the destination's limits apply; a destination's 429 is reported as "destination returned 429".
+
 ## Judge path (about 2 minutes, plus optional extras)
 
 You need Jira admin rights on the site where you install. Nothing here uses a real secret.
@@ -78,7 +86,7 @@ This section is for automated or AI-assisted review. It states what the app does
 
 ```bash
 npm install
-npm test        # node --test: 29 tests, no network; storage and fetch are injected as fakes
+npm test        # node --test: 30 tests, no network; storage and fetch are injected as fakes
 ```
 
 **Read in this order (about 600 lines):**
