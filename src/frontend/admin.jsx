@@ -23,7 +23,7 @@ import ForgeReconciler, {
   xcss,
 } from '@forge/react';
 import React, { useEffect, useState } from 'react';
-import { paramsToRows, toOperation } from '../core/form.js';
+import { expiresIn, paramsToRows, toOperation } from '../core/form.js';
 
 // Atlassian approves a host once across all of an app's egress groups, so approval is tracked per host.
 // Groups are keyed by host; older per-connection groups (sealed-<id>) are still read so earlier approvals count.
@@ -336,7 +336,15 @@ function Approvals({ me, version }) {
       { key: 'op', content: <Text><Strong>{r.operation}</Strong> · {r.id}</Text> },
       { key: 'params', content: <Code>{JSON.stringify(r.params)}</Code> },
       { key: 'caller', content: <User accountId={r.caller} /> },
-      { key: 'state', content: <Lozenge appearance={{ pending: 'moved', approved: 'inprogress', sent: 'success', rejected: 'removed', failed: 'removed', unknown: 'removed' }[r.state] ?? 'default'}>{r.state}</Lozenge> },
+      {
+        key: 'state',
+        content: (
+          <Inline space="space.075" alignBlock="center">
+            <Lozenge appearance={{ pending: 'moved', approved: 'inprogress', sent: 'success', rejected: 'removed', failed: 'removed', unknown: 'removed' }[r.state] ?? 'default'}>{r.state}</Lozenge>
+            {open(r) && r.expiresAt && <Text>{expiresIn(r.expiresAt)}</Text>}
+          </Inline>
+        ),
+      },
       {
         key: 'actions',
         content:
@@ -374,10 +382,19 @@ function Approvals({ me, version }) {
   );
 }
 
+// Filters apply to the loaded page; "Load older" brings in more.
+const ACTIVITY_FILTERS = {
+  all: { label: 'All', keep: () => true },
+  allowed: { label: 'Allowed', keep: (e) => e.outcome === 'allowed' },
+  refused: { label: 'Refused or failed', keep: (e) => e.outcome === 'refused' || e.outcome === 'failed' },
+  pending: { label: 'Pending', keep: (e) => e.outcome === 'pending' },
+};
+
 // Every call and refusal from every surface, newest first. Entries hold no credential and no response body.
 function Activity() {
   const [page, setPage] = useState({ entries: [], nextCursor: null });
   const [error, setError] = useState(null);
+  const [show, setShow] = useState('all');
   const load = async (cursor) => {
     try {
       const next = await invoke('activity', { cursor });
@@ -390,7 +407,7 @@ function Activity() {
   useEffect(() => {
     load();
   }, []);
-  const rows = page.entries.map((e, i) => ({
+  const rows = page.entries.filter(ACTIVITY_FILTERS[show].keep).map((e, i) => ({
     key: String(i),
     cells: [
       { key: 'at', content: new Date(e.at).toLocaleString() },
@@ -414,12 +431,19 @@ function Activity() {
       <Inline space="space.100" alignBlock="center">
         <Heading as="h2">Activity</Heading>
         <Button onClick={() => load()}>Refresh</Button>
+        <ButtonGroup label="Show">
+          {Object.entries(ACTIVITY_FILTERS).map(([k, f]) => (
+            <Button key={k} appearance="subtle" isSelected={show === k} onClick={() => setShow(k)}>
+              {f.label}
+            </Button>
+          ))}
+        </ButtonGroup>
       </Inline>
       {error && <SectionMessage appearance="error"><Text>{error}</Text></SectionMessage>}
       <DynamicTable
         head={{ cells: ['When', 'Operation', 'From', 'Caller', 'Outcome', 'Detail'].map((content, i) => ({ key: String(i), content })) }}
         rows={rows}
-        emptyView="No calls yet."
+        emptyView={show === 'all' ? 'No calls yet.' : 'No matching calls on this page.'}
       />
       {page.nextCursor && <Button onClick={() => load(page.nextCursor)}>Load older</Button>}
     </Stack>

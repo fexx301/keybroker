@@ -75,3 +75,11 @@ export function toOperation(form) {
     approval: Boolean(form.approval),
   };
 }
+
+// "expires in 21h" / "expires in 35m" for an open approval request; "expired" once the time has passed.
+export function expiresIn(expiresAt, now = Date.now()) {
+  const ms = Date.parse(expiresAt) - now;
+  if (!(ms > 0)) return 'expired';
+  const minutes = Math.ceil(ms / 60000);
+  return minutes >= 60 ? `expires in ${Math.floor(minutes / 60)}h` : `expires in ${minutes}m`;
+}

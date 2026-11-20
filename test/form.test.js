@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatParamLines, paramsToRows, parseParamLines, rowsToParams, toOperation } from '../src/core/form.js';
+import { expiresIn, formatParamLines, paramsToRows, parseParamLines, rowsToParams, toOperation } from '../src/core/form.js';
 import { Invalid, validateOperation } from '../src/core/operations.js';
 
 test('admin form: parameter lines round-trip through a valid operation', () => {
@@ -35,4 +35,13 @@ test('admin form: editor rows round-trip, including Jira work items and fixed va
   assert.throws(() => rowsToParams([rows[0], { ...rows[0], id: 'dup' }]), Invalid);
   const op = validateOperation(toOperation({ name: 'rows-op', connectionId: 'c1', method: 'POST', path: '/repos/{repo}', params: rows, returns: '', allowed: [] }));
   assert.equal(op.params.ticket.pattern, 'jira-issue');
+});
+
+test('approval expiry text: hours, minutes, then expired', () => {
+  const now = Date.parse('2026-11-20T10:00:00Z');
+  assert.equal(expiresIn('2026-11-21T07:30:00Z', now), 'expires in 21h');
+  assert.equal(expiresIn('2026-11-20T10:35:00Z', now), 'expires in 35m');
+  assert.equal(expiresIn('2026-11-20T10:00:20Z', now), 'expires in 1m');
+  assert.equal(expiresIn('2026-11-20T09:59:00Z', now), 'expired');
+  assert.equal(expiresIn('not a date', now), 'expired');
 });
